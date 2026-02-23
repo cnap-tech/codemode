@@ -1,11 +1,12 @@
 import type { Executor, ExecuteResult, SandboxOptions } from "../types.js";
 
-// @ts-ignore — isolated-vm is an optional peer dependency
-type IVM = any;
-
 /**
  * Executor implementation using isolated-vm (V8 isolates).
- * Requires `isolated-vm` as a peer dependency.
+ * Requires `isolated-vm` v6+ as a peer dependency.
+ *
+ * Each execute() call creates a fresh V8 isolate with its own heap — no state
+ * leaks between calls. The sandbox has zero I/O capabilities by default (no
+ * fetch, no fs, no require). The only way out is through injected host functions.
  */
 export class IsolatedVMExecutor implements Executor {
   private memoryMB: number;
@@ -21,12 +22,8 @@ export class IsolatedVMExecutor implements Executor {
     globals: Record<string, unknown>,
   ): Promise<ExecuteResult> {
     // @ts-ignore — optional peer dependency
-    const ivm = await import("isolated-vm");
-    const Isolate = ivm.default?.Isolate ?? (ivm as any).Isolate;
-    const Reference = ivm.default?.Reference ?? (ivm as any).Reference;
-    const ExternalCopy = ivm.default?.ExternalCopy ?? (ivm as any).ExternalCopy;
-
-    const isolate = new Isolate({ memoryLimit: this.memoryMB });
+    const ivm = (await import("isolated-vm")).default ?? (await import("isolated-vm"));
+    const isolate = new ivm.Isolate({ memoryLimit: this.memoryMB });
     const logs: string[] = [];
 
     try {
@@ -34,37 +31,72 @@ export class IsolatedVMExecutor implements Executor {
       const jail = context.global;
       await jail.set("global", jail.derefInto());
 
-      // Inject console (captures logs)
-      await context.evalClosure(
-        `globalThis.console = {
-          log:   (...args) => $0.applyIgnored(undefined, args, { arguments: { copy: true } }),
-          warn:  (...args) => $0.applyIgnored(undefined, args, { arguments: { copy: true } }),
-          error: (...args) => $0.applyIgnored(undefined, args, { arguments: { copy: true } }),
-        };`,
-        [
-          new Reference((...args: unknown[]) => {
-            logs.push(args.map((a) => stringify(a)).join(" "));
-          }),
-        ],
-        { arguments: { reference: true } },
+      // Inject console (captures logs via Callback)
+      jail.setSync(
+        "__log",
+        new ivm.Callback((...args: unknown[]) => {
+          logs.push(
+            args
+              .map((a) => (typeof a === "string" ? a : stringify(a)))
+              .join(" "),
+          );
+        }),
       );
+      await context.eval(`
+        globalThis.console = {
+          log: (...args) => __log(...args),
+          warn: (...args) => __log(...args),
+          error: (...args) => __log(...args),
+        };
+      `);
 
       // Inject globals
+      let refCounter = 0;
       for (const [name, value] of Object.entries(globals)) {
         if (typeof value === "function") {
-          await injectFunction(Reference, context, name, value as (...args: unknown[]) => unknown);
-        } else if (
-          typeof value === "object" &&
-          value !== null &&
-          !Array.isArray(value) &&
-          hasCallableValues(value as Record<string, unknown>)
-        ) {
-          await injectNamespace(Reference, ExternalCopy, context, name, value as Record<string, unknown>);
+          // Async host function: set Reference, wrap with .apply() in isolate
+          const refName = `__ref${refCounter++}`;
+          await jail.set(refName, new ivm.Reference(value));
+          await context.eval(`
+            globalThis[${JSON.stringify(name)}] = function(...args) {
+              return ${refName}.apply(undefined, args, {
+                arguments: { copy: true },
+                result: { promise: true, copy: true },
+              });
+            };
+          `);
+        } else if (isNamespaceWithMethods(value)) {
+          // Namespace object with methods (e.g. { request: fn })
+          const ns = value as Record<string, unknown>;
+          let nsSetup = `globalThis[${JSON.stringify(name)}] = {};\n`;
+
+          for (const [key, val] of Object.entries(ns)) {
+            if (typeof val === "function") {
+              const refName = `__ref${refCounter++}`;
+              await jail.set(refName, new ivm.Reference(val));
+              nsSetup += `
+                globalThis[${JSON.stringify(name)}][${JSON.stringify(key)}] = function(...args) {
+                  return ${refName}.apply(undefined, args, {
+                    arguments: { copy: true },
+                    result: { promise: true, copy: true },
+                  });
+                };
+              `;
+            }
+          }
+
+          // Inject non-function properties as JSON
+          const dataProps = Object.entries(ns).filter(([, v]) => typeof v !== "function");
+          if (dataProps.length > 0) {
+            const dataObj = Object.fromEntries(dataProps);
+            nsSetup += `Object.assign(globalThis[${JSON.stringify(name)}], ${JSON.stringify(dataObj)});\n`;
+          }
+
+          await context.eval(nsSetup);
         } else {
-          await context.evalClosure(
-            `globalThis[${JSON.stringify(name)}] = $0;`,
-            [new ExternalCopy(value).copyInto()],
-            { arguments: { reference: true } },
+          // Plain data: inject as JSON
+          await context.eval(
+            `globalThis[${JSON.stringify(name)}] = ${JSON.stringify(value)};`,
           );
         }
       }
@@ -87,76 +119,22 @@ export class IsolatedVMExecutor implements Executor {
         logs,
       };
     } finally {
-      isolate.dispose();
+      if (!isolate.isDisposed) {
+        isolate.dispose();
+      }
     }
   }
 }
 
-function hasCallableValues(obj: Record<string, unknown>): boolean {
-  return Object.values(obj).some((v) => typeof v === "function");
-}
-
-async function injectFunction(
-  Reference: any,
-  context: any,
-  name: string,
-  fn: (...args: unknown[]) => unknown,
-): Promise<void> {
-  await context.evalClosure(
-    `globalThis[${JSON.stringify(name)}] = function(...args) {
-      return $0.apply(undefined, args, {
-        arguments: { copy: true },
-        result: { promise: true, copy: true },
-      });
-    };`,
-    [new Reference(fn)],
-    { arguments: { reference: true } },
+function isNamespaceWithMethods(value: unknown): boolean {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    !Array.isArray(value) &&
+    Object.values(value as Record<string, unknown>).some(
+      (v) => typeof v === "function",
+    )
   );
-}
-
-async function injectNamespace(
-  Reference: any,
-  ExternalCopy: any,
-  context: any,
-  name: string,
-  ns: Record<string, unknown>,
-): Promise<void> {
-  const methods = Object.entries(ns).filter(([, v]) => typeof v === "function");
-  const data = Object.entries(ns).filter(([, v]) => typeof v !== "function");
-
-  let setupCode = `globalThis[${JSON.stringify(name)}] = {};\n`;
-
-  if (data.length > 0) {
-    setupCode = `
-      const _data = $${methods.length};
-      globalThis[${JSON.stringify(name)}] = { ..._data };
-    `;
-  }
-
-  for (let i = 0; i < methods.length; i++) {
-    const [methodName] = methods[i]!;
-    setupCode += `
-      globalThis[${JSON.stringify(name)}][${JSON.stringify(methodName)}] = function(...args) {
-        return $${i}.apply(undefined, args, {
-          arguments: { copy: true },
-          result: { promise: true, copy: true },
-        });
-      };
-    `;
-  }
-
-  const refs: any[] = methods.map(([, fn]) => new Reference(fn));
-  if (data.length > 0) {
-    const dataObj: Record<string, unknown> = {};
-    for (const [key, val] of data) {
-      dataObj[key] = val;
-    }
-    refs.push(new ExternalCopy(dataObj).copyInto());
-  }
-
-  await context.evalClosure(setupCode, refs, {
-    arguments: { reference: true },
-  });
 }
 
 function stringify(value: unknown): string {
