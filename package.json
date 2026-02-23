@@ -1,5 +1,5 @@
 {
-  "name": "code-mode",
+  "name": "codemode-mcp",
   "version": "0.1.0",
   "description": "Code Mode MCP tools from OpenAPI specs. Two tools (search + execute) replace hundreds of individual MCP tools.",
   "type": "module",
