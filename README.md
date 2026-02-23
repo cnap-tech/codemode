@@ -12,7 +12,7 @@ This is the same pattern [Cloudflare uses](https://blog.cloudflare.com/code-mode
 ## Install
 
 ```bash
-pnpm add codemode
+pnpm add @robinbraemer/codemode
 
 # Install a sandbox runtime (pick one):
 pnpm add isolated-vm       # V8 isolates — fastest, recommended
@@ -22,7 +22,7 @@ pnpm add quickjs-emscripten # WASM — portable fallback
 ## Quick Start
 
 ```typescript
-import { CodeMode } from 'codemode';
+import { CodeMode } from '@robinbraemer/codemode';
 import { Hono } from 'hono';
 
 const app = new Hono();
@@ -64,7 +64,7 @@ const result = await codemode.callTool('execute', {
 ```typescript
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
-import { CodeMode } from 'codemode';
+import { CodeMode } from '@robinbraemer/codemode';
 import { registerTools } from 'codemode/mcp';
 
 const codemode = new CodeMode({
@@ -222,7 +222,7 @@ async () => {
 CodeMode auto-detects your installed sandbox runtime. You can also pass one explicitly:
 
 ```typescript
-import { CodeMode, IsolatedVMExecutor } from 'codemode';
+import { CodeMode, IsolatedVMExecutor } from '@robinbraemer/codemode';
 
 const codemode = new CodeMode({
   spec,
@@ -243,7 +243,7 @@ Both are optional peer dependencies. Install at least one.
 Implement the `Executor` interface to use your own sandbox:
 
 ```typescript
-import { CodeMode, type Executor, type ExecuteResult } from 'codemode';
+import { CodeMode, type Executor, type ExecuteResult } from '@robinbraemer/codemode';
 
 class MyExecutor implements Executor {
   async execute(code: string, globals: Record<string, unknown>): Promise<ExecuteResult> {
