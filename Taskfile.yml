@@ -38,6 +38,18 @@ tasks:
     cmds:
       - pnpm tsc --noEmit
 
+  example:
+    desc: Run the Petstore demo
+    deps: [build]
+    cmds:
+      - pnpm tsx examples/petstore.ts
+
+  example:mcp:
+    desc: Run the Petstore MCP server
+    deps: [build]
+    cmds:
+      - pnpm tsx examples/petstore-mcp-server.ts
+
   ci:
     desc: Run full CI pipeline (lint + test + build)
     cmds:

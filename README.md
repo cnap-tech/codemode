@@ -9,6 +9,17 @@ Instead of defining individual MCP tools for every API endpoint (`list-pods`, `c
 
 This is the same pattern [Cloudflare uses](https://blog.cloudflare.com/code-mode-mcp/) to expose 2,500+ API endpoints through just two MCP tools, reducing context window usage by 99.9%.
 
+## Try It
+
+```bash
+git clone https://github.com/cnap-tech/codemode.git
+cd codemode
+pnpm install && pnpm build
+pnpm tsx examples/petstore.ts
+```
+
+Fetches the real Petstore OpenAPI spec from the web, then runs search + execute against a local Hono mock — no API keys needed.
+
 ## Install
 
 ```bash
