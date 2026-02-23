@@ -11,32 +11,32 @@ tasks:
   install:
     desc: Install dependencies
     cmds:
-      - npm install
+      - pnpm install
 
   build:
     desc: Build the package
     cmds:
-      - npx tsup
+      - pnpm tsup
 
   dev:
     desc: Build in watch mode
     cmds:
-      - npx tsup --watch
+      - pnpm tsup --watch
 
   test:
     desc: Run tests
     cmds:
-      - npx vitest run {{.CLI_ARGS}}
+      - pnpm vitest run {{.CLI_ARGS}}
 
   test:watch:
     desc: Run tests in watch mode
     cmds:
-      - npx vitest {{.CLI_ARGS}}
+      - pnpm vitest {{.CLI_ARGS}}
 
   lint:
     desc: Type-check with TypeScript
     cmds:
-      - npx tsc --noEmit
+      - pnpm tsc --noEmit
 
   ci:
     desc: Run full CI pipeline (lint + test + build)
