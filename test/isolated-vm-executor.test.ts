@@ -51,32 +51,19 @@ describe("IsolatedVMExecutor", () => {
     });
   });
 
-  it("captures console.log", async () => {
+  it("console.log is a no-op (does not crash)", async () => {
     const executor = new IsolatedVMExecutor();
     const result = await executor.execute(
       `async () => {
         console.log("hello", "world");
+        console.warn("warning!");
+        console.error("error!");
         return 42;
       }`,
       {},
     );
     expect(result.result).toBe(42);
-    expect(result.logs).toContain("hello world");
-  });
-
-  it("captures console.warn and console.error", async () => {
-    const executor = new IsolatedVMExecutor();
-    const result = await executor.execute(
-      `async () => {
-        console.warn("warning!");
-        console.error("error!");
-        return "ok";
-      }`,
-      {},
-    );
-    expect(result.result).toBe("ok");
-    expect(result.logs).toContain("warning!");
-    expect(result.logs).toContain("error!");
+    expect(result.error).toBeUndefined();
   });
 
   it("returns error for invalid code", async () => {

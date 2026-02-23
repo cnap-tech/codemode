@@ -1,6 +1,8 @@
 import { createExecutor } from "./executor/auto.js";
 import { createRequestBridge } from "./request-bridge.js";
+import { extractTags, processSpec } from "./spec.js";
 import { createExecuteToolDefinition, createSearchToolDefinition } from "./tools.js";
+import { truncateResponse } from "./truncate.js";
 import type {
   CodeModeOptions,
   Executor,
@@ -49,6 +51,11 @@ export class CodeMode {
   private options: CodeModeOptions;
   private searchToolName: string;
   private executeToolName: string;
+  private maxResponseTokens: number;
+
+  // Cached processed spec & context for tool descriptions
+  private processedSpec: Record<string, unknown> | null = null;
+  private specContext: { tags: string[]; endpointCount: number } | null = null;
 
   constructor(options: CodeModeOptions) {
     this.options = options;
@@ -57,6 +64,7 @@ export class CodeMode {
     this.executor = options.executor ?? null;
     this.searchToolName = "search";
     this.executeToolName = "execute";
+    this.maxResponseTokens = options.maxResponseTokens ?? 25_000;
 
     const baseUrl = options.baseUrl ?? "http://localhost";
     const bridge = createRequestBridge(options.request, baseUrl);
@@ -77,7 +85,7 @@ export class CodeMode {
    */
   tools(): ToolDefinition[] {
     return [
-      createSearchToolDefinition(this.searchToolName),
+      createSearchToolDefinition(this.searchToolName, this.specContext ?? undefined),
       createExecuteToolDefinition(this.executeToolName, this.namespace),
     ];
   }
@@ -104,14 +112,15 @@ export class CodeMode {
   /**
    * Execute a search against the OpenAPI spec.
    * The code runs in a sandbox with `spec` available as a global.
+   * All $refs are pre-resolved inline.
    */
   async search(code: string): Promise<ToolCallResult> {
     const executor = await this.getExecutor();
-    const spec = await this.resolveSpec();
+    const spec = await this.getProcessedSpec();
 
     const result = await executor.execute(code, { spec });
 
-    return formatResult(result);
+    return this.formatResult(result);
   }
 
   /**
@@ -129,7 +138,7 @@ export class CodeMode {
       [this.namespace]: client,
     });
 
-    return formatResult(result);
+    return this.formatResult(result);
   }
 
   /**
@@ -146,6 +155,24 @@ export class CodeMode {
     return this.specProvider;
   }
 
+  /**
+   * Get the processed spec (refs resolved, fields extracted).
+   * Caches the result after first call.
+   */
+  private async getProcessedSpec(): Promise<Record<string, unknown>> {
+    if (this.processedSpec) return this.processedSpec;
+
+    const raw = await this.resolveSpec();
+    this.processedSpec = processSpec(raw);
+
+    // Extract context for tool descriptions
+    const tags = extractTags(raw);
+    const endpointCount = Object.keys(raw.paths ?? {}).length;
+    this.specContext = { tags, endpointCount };
+
+    return this.processedSpec;
+  }
+
   private async getExecutor(): Promise<Executor> {
     if (this.executor) return this.executor;
 
@@ -160,37 +187,25 @@ export class CodeMode {
     }
     return this.executorPromise;
   }
-}
 
-function formatResult(result: {
-  result: unknown;
-  error?: string;
-  logs: string[];
-}): ToolCallResult {
-  if (result.error) {
-    const parts: string[] = [];
-    if (result.logs.length > 0) {
-      parts.push(`Console output:\n${result.logs.join("\n")}`);
+  private formatResult(result: {
+    result: unknown;
+    error?: string;
+  }): ToolCallResult {
+    if (result.error) {
+      return {
+        content: [{ type: "text", text: `Error: ${result.error}` }],
+        isError: true,
+      };
     }
-    parts.push(`Error: ${result.error}`);
+
+    const resultText =
+      typeof result.result === "string"
+        ? result.result
+        : JSON.stringify(result.result, null, 2);
+
     return {
-      content: [{ type: "text", text: parts.join("\n\n") }],
-      isError: true,
+      content: [{ type: "text", text: truncateResponse(resultText, this.maxResponseTokens) }],
     };
   }
-
-  const parts: string[] = [];
-  if (result.logs.length > 0) {
-    parts.push(`Console output:\n${result.logs.join("\n")}`);
-  }
-
-  const resultText =
-    typeof result.result === "string"
-      ? result.result
-      : JSON.stringify(result.result, null, 2);
-  parts.push(resultText);
-
-  return {
-    content: [{ type: "text", text: parts.join("\n\n") }],
-  };
 }

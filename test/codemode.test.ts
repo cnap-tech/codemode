@@ -8,19 +8,12 @@ class TestExecutor implements Executor {
     code: string,
     globals: Record<string, unknown>,
   ): Promise<ExecuteResult> {
-    const logs: string[] = [];
-
     // Create a minimal sandbox using Function constructor
     // (NOT safe for production - only for testing)
     const globalNames = Object.keys(globals);
     const globalValues = Object.values(globals);
 
-    const consoleMock = {
-      log: (...args: unknown[]) =>
-        logs.push(args.map((a) => (typeof a === "string" ? a : JSON.stringify(a))).join(" ")),
-      warn: (...args: unknown[]) => logs.push(args.map(String).join(" ")),
-      error: (...args: unknown[]) => logs.push(args.map(String).join(" ")),
-    };
+    const noopConsole = { log: () => {}, warn: () => {}, error: () => {} };
 
     try {
       const fn = new Function(
@@ -28,13 +21,12 @@ class TestExecutor implements Executor {
         ...globalNames,
         `return (${code})();`,
       );
-      const result = await fn(consoleMock, ...globalValues);
-      return { result, logs };
+      const result = await fn(noopConsole, ...globalValues);
+      return { result };
     } catch (err) {
       return {
         result: undefined,
         error: err instanceof Error ? err.message : String(err),
-        logs,
       };
     }
   }
@@ -279,18 +271,6 @@ describe("CodeMode", () => {
     });
   });
 
-  describe("console output", () => {
-    it("captures console.log from sandbox", async () => {
-      const result = await codemode.search(`
-        async () => {
-          console.log("searching...");
-          return Object.keys(spec.paths);
-        }
-      `);
-
-      expect(result.content[0]!.text).toContain("searching...");
-    });
-  });
 });
 
 describe("Hono integration", () => {

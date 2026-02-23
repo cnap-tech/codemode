@@ -54,13 +54,15 @@ const codemode = new CodeMode({
 // The agent searches the spec to discover endpoints...
 const search = await codemode.callTool('search', {
   code: `async () => {
-    return Object.entries(spec.paths)
-      .filter(([p]) => p.includes('/clusters'))
-      .flatMap(([path, methods]) =>
-        Object.entries(methods)
-          .filter(([m]) => ['get','post','put','delete'].includes(m))
-          .map(([method, op]) => ({ method: method.toUpperCase(), path, summary: op.summary }))
-      );
+    const results = [];
+    for (const [path, methods] of Object.entries(spec.paths)) {
+      for (const [method, op] of Object.entries(methods)) {
+        if (op.tags?.some(t => t.toLowerCase() === 'clusters')) {
+          results.push({ method: method.toUpperCase(), path, summary: op.summary });
+        }
+      }
+    }
+    return results;
   }`
 });
 
@@ -79,7 +81,7 @@ const result = await codemode.callTool('execute', {
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { CodeMode } from '@robinbraemer/codemode';
-import { registerTools } from 'codemode/mcp';
+import { registerTools } from '@robinbraemer/codemode/mcp';
 
 const codemode = new CodeMode({
   spec: () => fetchOpenAPISpec(),
@@ -101,7 +103,8 @@ AI Agent
   ▼
 CodeMode MCP Server
   │
-  ├─ search(code) → runs JS with OpenAPI spec as a global
+  ├─ search(code) → runs JS with preprocessed OpenAPI spec
+  │   → all $refs resolved inline, only essential fields kept
   │   → agent discovers endpoints, schemas, parameters
   │
   └─ execute(code) → runs JS with injected request client
@@ -125,6 +128,7 @@ Each tool call gets a fresh sandbox with no state carried over between calls.
 | `baseUrl` | `string` | `"http://localhost"` | Base URL for relative paths |
 | `sandbox` | `{ memoryMB?, timeoutMs? }` | `{ 64, 30000 }` | Sandbox resource limits |
 | `executor` | `Executor` | auto-detect | Custom sandbox executor |
+| `maxResponseTokens` | `number` | `25000` | Token limit for response truncation (0 to disable) |
 
 ### Methods
 
@@ -156,24 +160,27 @@ Clean up sandbox resources.
 
 ### Inside `search`
 
-The `spec` global is the full OpenAPI 3.x document:
+The `spec` global is the preprocessed OpenAPI spec with all `$ref` pointers resolved inline:
 
 ```javascript
-// Find endpoints by keyword
+// Find endpoints by tag
 async () => {
-  return Object.entries(spec.paths)
-    .filter(([p]) => p.includes('/clusters'))
-    .flatMap(([path, methods]) =>
-      Object.entries(methods)
-        .filter(([m]) => ['get','post','put','delete','patch'].includes(m))
-        .map(([method, op]) => ({
-          method: method.toUpperCase(), path, summary: op.summary
-        }))
-    );
+  const results = [];
+  for (const [path, methods] of Object.entries(spec.paths)) {
+    for (const [method, op] of Object.entries(methods)) {
+      if (op.tags?.some(t => t.toLowerCase() === 'clusters')) {
+        results.push({ method: method.toUpperCase(), path, summary: op.summary });
+      }
+    }
+  }
+  return results;
 }
 
-// Get a specific schema
-async () => spec.components?.schemas?.Product
+// Get endpoint with requestBody schema (refs are already resolved)
+async () => {
+  const op = spec.paths['/v1/products']?.post;
+  return { summary: op?.summary, requestBody: op?.requestBody };
+}
 
 // Spec metadata
 async () => ({
@@ -200,11 +207,12 @@ async () => {
 
 // POST with body
 async () => {
-  return api.request({
+  const res = await api.request({
     method: "POST",
     path: "/v1/products",
     body: { name: "Redis", chart: "bitnami/redis" },
   });
+  return { status: res.status, body: res.body };
 }
 
 // Chain calls
@@ -230,6 +238,23 @@ async () => {
 | `headers` | `Record<string, string>` | Additional headers (optional) |
 
 **Response:** `{ status: number, headers: Record<string, string>, body: unknown }`
+
+## Spec Preprocessing
+
+CodeMode automatically preprocesses your OpenAPI spec before passing it to the search sandbox:
+
+- **`$ref` resolution** — all `$ref` pointers are resolved inline (circular refs become `{ $circular: ref }`)
+- **Field extraction** — only essential fields kept per operation: `summary`, `description`, `tags`, `operationId`, `parameters`, `requestBody`, `responses`
+- **Metadata preserved** — `info`, `servers`, and `components.schemas` are kept alongside processed paths
+
+You can also use the preprocessing utilities directly:
+
+```typescript
+import { resolveRefs, processSpec, extractTags } from '@robinbraemer/codemode';
+
+const processed = processSpec(rawSpec);
+const tags = extractTags(rawSpec);
+```
 
 ## Executors
 

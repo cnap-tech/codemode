@@ -4,7 +4,6 @@
 export interface ExecuteResult {
   result: unknown;
   error?: string;
-  logs: string[];
 }
 
 /**
@@ -113,6 +112,12 @@ export interface CodeModeOptions {
    * isolated-vm or quickjs-emscripten from installed peer dependencies.
    */
   executor?: Executor;
+
+  /**
+   * Maximum tokens for response truncation.
+   * Default: 25000 (~100KB). Set to 0 to disable truncation.
+   */
+  maxResponseTokens?: number;
 }
 
 /**

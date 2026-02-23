@@ -51,17 +51,19 @@ describe("QuickJSExecutor", () => {
     });
   });
 
-  it("captures console.log", async () => {
+  it("console.log is a no-op (does not crash)", async () => {
     const executor = new QuickJSExecutor();
     const result = await executor.execute(
       `async () => {
         console.log("hello", "world");
+        console.warn("warning!");
+        console.error("error!");
         return 42;
       }`,
       {},
     );
     expect(result.result).toBe(42);
-    expect(result.logs).toContain("hello world");
+    expect(result.error).toBeUndefined();
   });
 
   it("returns error for invalid code", async () => {

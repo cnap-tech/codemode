@@ -26,7 +26,6 @@ export class QuickJSExecutor implements Executor {
     globals: Record<string, unknown>,
   ): Promise<ExecuteResult> {
     const qjs = await import("quickjs-emscripten");
-    const logs: string[] = [];
 
     // Use the convenience function that manages module/runtime lifecycle
     const vm = await qjs.newAsyncContext();
@@ -40,8 +39,10 @@ export class QuickJSExecutor implements Executor {
     runtime.setInterruptHandler(() => Date.now() > deadline);
 
     try {
-      // Inject console
-      injectConsole(vm, logs);
+      // No-op console — sandbox code should return data, not log it.
+      // Injecting a real console would create an OOM vector since logs
+      // accumulate in the host process outside the VM memory limit.
+      injectNoopConsole(vm);
 
       // Inject globals
       for (const [name, value] of Object.entries(globals)) {
@@ -81,7 +82,6 @@ export class QuickJSExecutor implements Executor {
         return {
           result: undefined,
           error: typeof error === "object" && error?.message ? error.message : String(error),
-          logs,
         };
       }
 
@@ -93,12 +93,11 @@ export class QuickJSExecutor implements Executor {
       // evalCodeAsync wraps async results as { type: 'fulfilled', value } or { type: 'rejected', reason }
       result = unwrapPromiseResult(result);
 
-      return { result, logs };
+      return { result };
     } catch (err) {
       return {
         result: undefined,
         error: err instanceof Error ? err.message : String(err),
-        logs,
       };
     } finally {
       // Dispose context first, then runtime
@@ -110,20 +109,17 @@ export class QuickJSExecutor implements Executor {
   }
 }
 
-function injectConsole(vm: any, logs: string[]): void {
+function injectNoopConsole(vm: any): void {
   const consoleObj = vm.newObject();
 
-  const logFn = vm.newFunction("log", (...args: any[]) => {
-    const values = args.map((h: any) => vm.dump(h));
-    logs.push(values.map((v: unknown) => (typeof v === "string" ? v : JSON.stringify(v))).join(" "));
-  });
+  const noopFn = vm.newFunction("log", () => {});
 
-  vm.setProp(consoleObj, "log", logFn);
-  vm.setProp(consoleObj, "warn", logFn);
-  vm.setProp(consoleObj, "error", logFn);
+  vm.setProp(consoleObj, "log", noopFn);
+  vm.setProp(consoleObj, "warn", noopFn);
+  vm.setProp(consoleObj, "error", noopFn);
   vm.setProp(vm.global, "console", consoleObj);
 
-  logFn.dispose();
+  noopFn.dispose();
   consoleObj.dispose();
 }
 

@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "petstore": {
+      "command": "pnpm",
+      "args": ["tsx", "examples/petstore-mcp-server.ts"]
+    }
+  }
+}

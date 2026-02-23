@@ -1,45 +1,101 @@
 import type { ToolDefinition } from "./types.js";
 
-export function createSearchToolDefinition(toolName: string): ToolDefinition {
-  return {
-    name: toolName,
-    description: `Search the API specification to discover available endpoints.
+const SPEC_TYPES = `
+interface OperationInfo {
+  summary?: string;
+  description?: string;
+  tags?: string[];
+  operationId?: string;
+  parameters?: Array<{ name: string; in: string; required?: boolean; schema?: unknown; description?: string }>;
+  requestBody?: { required?: boolean; content?: Record<string, { schema?: unknown }> };
+  responses?: Record<string, { description?: string; content?: Record<string, { schema?: unknown }> }>;
+}
 
-Write an async JavaScript arrow function that filters and explores the \`spec\` object (an OpenAPI 3.x document). The full spec is available as a global variable.
+interface PathItem {
+  get?: OperationInfo;
+  post?: OperationInfo;
+  put?: OperationInfo;
+  patch?: OperationInfo;
+  delete?: OperationInfo;
+}
 
-Common patterns:
-- Find endpoints by path: \`spec.paths\` is an object keyed by path string
-- Each path has HTTP methods (get, post, put, delete, patch) as keys
-- Each operation has: summary, description, parameters, requestBody, responses
-- Use spec.components.schemas for data models
+declare const spec: {
+  paths: Record<string, PathItem>;
+  components?: { schemas?: Record<string, unknown> };
+  info?: { title?: string; version?: string; description?: string };
+};
+`;
+
+export function createSearchToolDefinition(
+  toolName: string,
+  context?: { tags?: string[]; endpointCount?: number },
+): ToolDefinition {
+  const parts: string[] = [];
+
+  parts.push(
+    `Search the API specification to discover available endpoints. All $refs are pre-resolved inline.`,
+  );
+
+  if (context?.tags && context.tags.length > 0) {
+    const shown = context.tags.slice(0, 30).join(", ");
+    const suffix =
+      context.tags.length > 30 ? `... (${context.tags.length} total)` : "";
+    parts.push(`Tags: ${shown}${suffix}`);
+  }
+
+  if (context?.endpointCount) {
+    parts.push(`Endpoints: ${context.endpointCount}`);
+  }
+
+  parts.push(`Types:
+${SPEC_TYPES}`);
+
+  const exampleTag = context?.tags?.[0]?.toLowerCase() ?? "items";
+
+  parts.push(`Your code must be an async arrow function that returns the result.
 
 Examples:
-  // Find all cluster-related endpoints
-  async () => {
-    return Object.entries(spec.paths)
-      .filter(([p]) => p.includes('/clusters'))
-      .flatMap(([path, methods]) =>
-        Object.entries(methods)
-          .filter(([m]) => ['get','post','put','delete','patch'].includes(m))
-          .map(([method, op]) => ({
-            method: method.toUpperCase(), path, summary: op.summary
-          }))
-      );
-  }
 
-  // Get the schema for a specific model
-  async () => {
-    return spec.components?.schemas?.Product;
+// List all endpoints
+async () => {
+  const results = [];
+  for (const [path, methods] of Object.entries(spec.paths)) {
+    for (const [method, op] of Object.entries(methods)) {
+      results.push({ method: method.toUpperCase(), path, summary: op.summary });
+    }
   }
+  return results;
+}
 
-Return the matching endpoints/schemas as a structured result the agent can use to plan execute() calls.`,
+// Find endpoints by tag
+async () => {
+  const results = [];
+  for (const [path, methods] of Object.entries(spec.paths)) {
+    for (const [method, op] of Object.entries(methods)) {
+      if (op.tags?.some(t => t.toLowerCase() === '${exampleTag}')) {
+        results.push({ method: method.toUpperCase(), path, summary: op.summary });
+      }
+    }
+  }
+  return results;
+}
+
+// Get full details for a specific endpoint (refs are already resolved)
+async () => {
+  const op = spec.paths['/example']?.get;
+  return { summary: op?.summary, parameters: op?.parameters, requestBody: op?.requestBody };
+}`);
+
+  return {
+    name: toolName,
+    description: parts.join("\n\n"),
     inputSchema: {
       type: "object",
       properties: {
         code: {
           type: "string",
           description:
-            "An async JavaScript arrow function that searches the `spec` object. Must return a value.",
+            "JavaScript async arrow function to search the `spec` object",
         },
       },
       required: ["code"],
@@ -51,55 +107,68 @@ export function createExecuteToolDefinition(
   toolName: string,
   namespace: string,
 ): ToolDefinition {
+  const types = `
+interface RequestOptions {
+  method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
+  path: string;
+  query?: Record<string, string | number | boolean>;
+  body?: unknown;
+  headers?: Record<string, string>;
+}
+
+interface Response<T = unknown> {
+  status: number;
+  headers: Record<string, string>;
+  body: T;
+}
+
+declare const ${namespace}: {
+  request<T = unknown>(options: RequestOptions): Promise<Response<T>>;
+};
+`;
+
   return {
     name: toolName,
-    description: `Execute API calls by writing JavaScript code.
+    description: `Execute API calls by writing JavaScript code. First use the 'search' tool to find the right endpoints.
 
-Write an async JavaScript arrow function that uses \`${namespace}.request()\` to make API calls. The request function handles authentication automatically.
-
-\`${namespace}.request(options)\` takes:
-  - method: HTTP method string ("GET", "POST", "PUT", "DELETE", "PATCH")
-  - path: API path string (e.g. "/v1/clusters")
-  - query: optional object of query parameters
-  - body: optional request body (will be JSON-serialized)
-  - headers: optional object of additional headers
-
-Returns: { status: number, headers: object, body: unknown }
+Available in your code:
+${types}
+Your code must be an async arrow function that returns the result.
 
 Examples:
-  // List resources
-  async () => {
-    const res = await ${namespace}.request({ method: "GET", path: "/v1/clusters" });
-    return res.body;
-  }
 
-  // Create a resource
-  async () => {
-    return ${namespace}.request({
-      method: "POST",
-      path: "/v1/products",
-      body: { name: "My Product", chart: "nginx" }
-    });
-  }
+// List resources
+async () => {
+  const res = await ${namespace}.request({ method: "GET", path: "/v1/items" });
+  return res.body;
+}
 
-  // Chain multiple calls
-  async () => {
-    const clusters = await ${namespace}.request({ method: "GET", path: "/v1/clusters" });
-    const details = await Promise.all(
-      clusters.body.map(c =>
-        ${namespace}.request({ method: "GET", path: \`/v1/clusters/\${c.id}\` })
-      )
-    );
-    return details.map(d => d.body);
-  }
+// Create a resource
+async () => {
+  const res = await ${namespace}.request({
+    method: "POST",
+    path: "/v1/items",
+    body: { name: "Widget" }
+  });
+  return { status: res.status, body: res.body };
+}
 
-Write clean, focused code. Return the data the user needs.`,
+// Chain multiple calls
+async () => {
+  const list = await ${namespace}.request({ method: "GET", path: "/v1/items" });
+  const details = await Promise.all(
+    list.body.map(item =>
+      ${namespace}.request({ method: "GET", path: \`/v1/items/\${item.id}\` })
+    )
+  );
+  return details.map(d => d.body);
+}`,
     inputSchema: {
       type: "object",
       properties: {
         code: {
           type: "string",
-          description: `An async JavaScript arrow function that uses \`${namespace}.request()\` to make API calls.`,
+          description: `JavaScript async arrow function that uses \`${namespace}.request()\` to make API calls`,
         },
       },
       required: ["code"],

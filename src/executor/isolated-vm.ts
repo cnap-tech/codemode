@@ -24,29 +24,20 @@ export class IsolatedVMExecutor implements Executor {
     // @ts-ignore — optional peer dependency
     const ivm = (await import("isolated-vm")).default ?? (await import("isolated-vm"));
     const isolate = new ivm.Isolate({ memoryLimit: this.memoryMB });
-    const logs: string[] = [];
 
     try {
       const context = await isolate.createContext();
       const jail = context.global;
       await jail.set("global", jail.derefInto());
 
-      // Inject console (captures logs via Callback)
-      jail.setSync(
-        "__log",
-        new ivm.Callback((...args: unknown[]) => {
-          logs.push(
-            args
-              .map((a) => (typeof a === "string" ? a : stringify(a)))
-              .join(" "),
-          );
-        }),
-      );
+      // No-op console — sandbox code should return data, not log it.
+      // Injecting a real console would create an OOM vector since logs
+      // accumulate in the host process outside the isolate memory limit.
       await context.eval(`
         globalThis.console = {
-          log: (...args) => __log(...args),
-          warn: (...args) => __log(...args),
-          error: (...args) => __log(...args),
+          log: () => {},
+          warn: () => {},
+          error: () => {},
         };
       `);
 
@@ -111,12 +102,11 @@ export class IsolatedVMExecutor implements Executor {
       });
 
       context.release();
-      return { result, logs };
+      return { result };
     } catch (err) {
       return {
         result: undefined,
         error: err instanceof Error ? err.message : String(err),
-        logs,
       };
     } finally {
       if (!isolate.isDisposed) {
@@ -135,13 +125,4 @@ function isNamespaceWithMethods(value: unknown): boolean {
       (v) => typeof v === "function",
     )
   );
-}
-
-function stringify(value: unknown): string {
-  if (typeof value === "string") return value;
-  try {
-    return JSON.stringify(value);
-  } catch {
-    return String(value);
-  }
 }
