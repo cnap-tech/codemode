@@ -27,7 +27,8 @@ import { z } from "zod";
  */
 export function registerTools(
   codemode: CodeMode,
-  server: McpServerLike,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  server: { registerTool: (...args: any[]) => any },
 ): void {
   const toolDefs = codemode.tools();
 
@@ -38,24 +39,9 @@ export function registerTools(
         description: def.description,
         inputSchema: { code: z.string().describe("JavaScript code to execute") },
       },
-      async (args) => {
-        return codemode.callTool(def.name, { code: args.code as string });
+      async (args: { code: string }) => {
+        return codemode.callTool(def.name, { code: args.code });
       },
     );
   }
-}
-
-/**
- * Minimal interface for MCP server tool registration.
- * Compatible with `McpServer` from `@modelcontextprotocol/sdk`.
- */
-interface McpServerLike {
-  registerTool(
-    name: string,
-    config: {
-      description?: string;
-      inputSchema?: Record<string, z.ZodType>;
-    },
-    handler: (args: Record<string, unknown>) => Promise<unknown>,
-  ): unknown;
 }
