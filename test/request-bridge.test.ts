@@ -52,8 +52,9 @@ describe("HTTP method validation", () => {
   const bridge = createRequestBridge(echoHandler, "http://localhost");
 
   it("allows standard HTTP methods", async () => {
+    // Sequential: each call asserts independently
     for (const method of ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"]) {
-      const res = await bridge({ method, path: "/test" });
+      const res = await bridge({ method, path: "/test" }); // oxlint-disable-line no-await-in-loop
       expect(res.status).toBe(200);
     }
   });
@@ -93,9 +94,9 @@ describe("request limits", () => {
   it("uses default limit of 50", async () => {
     const bridge = createRequestBridge(echoHandler, "http://localhost");
 
-    // Should work for first 50
+    // Sequential: must increment request counter one at a time
     for (let i = 0; i < 50; i++) {
-      await bridge({ method: "GET", path: `/req-${i}` });
+      await bridge({ method: "GET", path: `/req-${i}` }); // oxlint-disable-line no-await-in-loop
     }
 
     // 51st should fail
@@ -157,15 +158,19 @@ describe("header filtering", () => {
   });
 });
 
+const largeHandler: RequestHandler = () => {
+  const bigBody = "x".repeat(1024);
+  return new Response(bigBody, {
+    headers: { "content-type": "text/plain" },
+  });
+};
+
+const smallHandler: RequestHandler = () => {
+  return Response.json({ ok: true });
+};
+
 describe("response size limits", () => {
   it("rejects responses exceeding maxResponseBytes", async () => {
-    const largeHandler: RequestHandler = () => {
-      const bigBody = "x".repeat(1024);
-      return new Response(bigBody, {
-        headers: { "content-type": "text/plain" },
-      });
-    };
-
     const bridge = createRequestBridge(largeHandler, "http://localhost", {
       maxResponseBytes: 512,
     });
@@ -176,10 +181,6 @@ describe("response size limits", () => {
   });
 
   it("allows responses within limit", async () => {
-    const smallHandler: RequestHandler = () => {
-      return Response.json({ ok: true });
-    };
-
     const bridge = createRequestBridge(smallHandler, "http://localhost", {
       maxResponseBytes: 1024,
     });

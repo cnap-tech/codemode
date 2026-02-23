@@ -43,7 +43,9 @@ export class IsolatedVMExecutor implements Executor {
         };
       `);
 
-      // Inject globals
+      // Inject globals — sequential awaits required: each jail.set/context.eval
+      // depends on prior state (ref counters, globalThis assignments).
+      /* oxlint-disable no-await-in-loop */
       let refCounter = 0;
       for (const [name, value] of Object.entries(globals)) {
         if (typeof value === "function") {
@@ -93,6 +95,7 @@ export class IsolatedVMExecutor implements Executor {
           );
         }
       }
+      /* oxlint-enable no-await-in-loop */
 
       // Execute the code with both CPU timeout and wall-clock timeout.
       // The ivm timeout only covers CPU time; async host calls (request bridge)

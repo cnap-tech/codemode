@@ -190,5 +190,5 @@ export function extractTags(spec: OpenAPISpec): string[] {
     }
   }
 
-  return [...tags.entries()].sort((a, b) => b[1] - a[1]).map(([t]) => t);
+  return [...tags.entries()].toSorted((a, b) => b[1] - a[1]).map(([t]) => t);
 }
