@@ -23,8 +23,7 @@ import { z } from "zod";
 /**
  * Register CodeMode's search and execute tools on an MCP server.
  *
- * This uses the `@modelcontextprotocol/sdk` `McpServer.tool()` API
- * to register both tools with proper Zod schemas.
+ * Uses the `McpServer.registerTool()` API from `@modelcontextprotocol/sdk`.
  */
 export function registerTools(
   codemode: CodeMode,
@@ -33,10 +32,12 @@ export function registerTools(
   const toolDefs = codemode.tools();
 
   for (const def of toolDefs) {
-    server.tool(
+    server.registerTool(
       def.name,
-      def.description,
-      { code: z.string().describe("JavaScript code to execute") },
+      {
+        description: def.description,
+        inputSchema: { code: z.string().describe("JavaScript code to execute") },
+      },
       async (args) => {
         return codemode.callTool(def.name, { code: args.code as string });
       },
@@ -49,10 +50,12 @@ export function registerTools(
  * Compatible with `McpServer` from `@modelcontextprotocol/sdk`.
  */
 interface McpServerLike {
-  tool(
+  registerTool(
     name: string,
-    description: string,
-    schema: Record<string, z.ZodType>,
+    config: {
+      description?: string;
+      inputSchema?: Record<string, z.ZodType>;
+    },
     handler: (args: Record<string, unknown>) => Promise<unknown>,
-  ): void;
+  ): unknown;
 }
