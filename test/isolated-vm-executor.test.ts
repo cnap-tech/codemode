@@ -99,13 +99,28 @@ describe("IsolatedVMExecutor", () => {
     expect(result.error).toBeDefined();
   });
 
-  it("enforces timeout", async () => {
+  it("enforces CPU timeout", async () => {
     const executor = new IsolatedVMExecutor({ timeoutMs: 100 });
     const result = await executor.execute(
       `async () => { while(true) {} }`,
       {},
     );
     expect(result.error).toBeDefined();
+  });
+
+  it("enforces wall-clock timeout on stalled async host calls", async () => {
+    const executor = new IsolatedVMExecutor({ timeoutMs: 5_000, wallTimeMs: 200 });
+    const result = await executor.execute(
+      `async () => {
+        // Call a host function that never resolves — wall-clock timeout should fire
+        return await hang();
+      }`,
+      {
+        hang: () => new Promise(() => {}), // never resolves
+      },
+    );
+    expect(result.error).toBeDefined();
+    expect(result.error).toContain("Wall-clock timeout");
   });
 
   it("isolates executions (no state leakage)", async () => {

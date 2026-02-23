@@ -9,9 +9,8 @@ export interface ExecuteResult {
 /**
  * Sandbox executor interface. Implement this to use a custom sandbox runtime.
  *
- * Built-in implementations:
+ * Built-in implementation:
  * - `IsolatedVMExecutor` (requires `isolated-vm` peer dependency)
- * - `QuickJSExecutor` (requires `quickjs-emscripten` peer dependency)
  */
 export interface Executor {
   /**
@@ -38,8 +37,10 @@ export interface Executor {
 export interface SandboxOptions {
   /** Memory limit in MB (default: 64) */
   memoryMB?: number;
-  /** Execution timeout in ms (default: 30000) */
+  /** CPU timeout in ms — caps pure compute time (default: 30000) */
   timeoutMs?: number;
+  /** Wall-clock timeout in ms — caps total elapsed time including async I/O (default: 60000) */
+  wallTimeMs?: number;
 }
 
 /**
@@ -108,8 +109,7 @@ export interface CodeModeOptions {
   sandbox?: SandboxOptions;
 
   /**
-   * Custom executor instance. If not provided, auto-detects
-   * isolated-vm or quickjs-emscripten from installed peer dependencies.
+   * Custom executor instance. If not provided, uses isolated-vm.
    */
   executor?: Executor;
 
@@ -118,6 +118,31 @@ export interface CodeModeOptions {
    * Default: 25000 (~100KB). Set to 0 to disable truncation.
    */
   maxResponseTokens?: number;
+
+  /**
+   * Maximum number of requests per execution.
+   * Default: 50.
+   */
+  maxRequests?: number;
+
+  /**
+   * Maximum response body size in bytes.
+   * Default: 10MB (10_485_760).
+   */
+  maxResponseBytes?: number;
+
+  /**
+   * Allowed headers whitelist. When set, only these headers are forwarded.
+   * When undefined, a default blocklist strips dangerous headers
+   * (Authorization, Cookie, Host, X-Forwarded-*, Proxy-*).
+   */
+  allowedHeaders?: string[];
+
+  /**
+   * Maximum $ref resolution depth.
+   * Default: 50.
+   */
+  maxRefDepth?: number;
 }
 
 /**

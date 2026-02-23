@@ -28,9 +28,8 @@ Fetches the real Petstore OpenAPI spec from the web, then runs search + execute 
 ```bash
 pnpm add @robinbraemer/codemode
 
-# Install a sandbox runtime (pick one):
-pnpm add isolated-vm       # V8 isolates — fastest, recommended
-pnpm add quickjs-emscripten # WASM — portable fallback
+# Install the sandbox runtime:
+pnpm add isolated-vm       # V8 isolates
 ```
 
 ## Quick Start
@@ -112,7 +111,7 @@ CodeMode MCP Server
       → no network hop, auth handled automatically
 ```
 
-All code runs in an isolated sandbox (V8 isolate or QuickJS WASM). The sandbox has zero I/O by default — no `require`, no `process`, no `fetch`, no filesystem. The only way to interact with the outside world is through the injected globals (`spec` for search, `{namespace}.request()` for execute).
+All code runs in an isolated V8 sandbox. The sandbox has zero I/O by default — no `require`, no `process`, no `fetch`, no filesystem. The only way to interact with the outside world is through the injected globals (`spec` for search, `{namespace}.request()` for execute).
 
 Each tool call gets a fresh sandbox with no state carried over between calls.
 
@@ -124,11 +123,23 @@ Each tool call gets a fresh sandbox with no state carried over between calls.
 |--------|------|---------|-------------|
 | `spec` | `OpenAPISpec \| () => OpenAPISpec \| Promise<OpenAPISpec>` | required | OpenAPI 3.x spec or async getter |
 | `request` | `(input, init?) => Response` | required | Fetch-compatible handler (`app.request.bind(app)` for Hono) |
-| `namespace` | `string` | `"api"` | Client name in sandbox (`api.request(...)`) |
+| `namespace` | `string` | `"api"` | Client name in sandbox (`api.request(...)`). Must be a valid JS identifier, not a reserved name. |
 | `baseUrl` | `string` | `"http://localhost"` | Base URL for relative paths |
-| `sandbox` | `{ memoryMB?, timeoutMs? }` | `{ 64, 30000 }` | Sandbox resource limits |
-| `executor` | `Executor` | auto-detect | Custom sandbox executor |
+| `sandbox` | `SandboxOptions` | see below | Sandbox resource limits |
+| `executor` | `Executor` | `IsolatedVMExecutor` | Custom sandbox executor |
 | `maxResponseTokens` | `number` | `25000` | Token limit for response truncation (0 to disable) |
+| `maxRequests` | `number` | `50` | Max requests per `execute()` call |
+| `maxResponseBytes` | `number` | `10485760` | Max response body size in bytes (10MB) |
+| `allowedHeaders` | `string[]` | `undefined` | Header whitelist. When unset, a blocklist strips `Authorization`, `Cookie`, `Host`, `X-Forwarded-*`, `Proxy-*`. |
+| `maxRefDepth` | `number` | `50` | Max `$ref` resolution depth |
+
+#### `SandboxOptions`
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `memoryMB` | `number` | `64` | V8 isolate memory limit |
+| `timeoutMs` | `number` | `30000` | CPU timeout in ms (caps pure compute) |
+| `wallTimeMs` | `number` | `60000` | Wall-clock timeout in ms (caps total elapsed time including async I/O) |
 
 ### Methods
 
@@ -258,7 +269,7 @@ const tags = extractTags(rawSpec);
 
 ## Executors
 
-CodeMode auto-detects your installed sandbox runtime. You can also pass one explicitly:
+CodeMode uses `isolated-vm` (V8 isolates) for sandboxed execution. You can pass a custom instance:
 
 ```typescript
 import { CodeMode, IsolatedVMExecutor } from '@robinbraemer/codemode';
@@ -266,16 +277,17 @@ import { CodeMode, IsolatedVMExecutor } from '@robinbraemer/codemode';
 const codemode = new CodeMode({
   spec,
   request: handler,
-  executor: new IsolatedVMExecutor({ memoryMB: 128, timeoutMs: 60_000 }),
+  executor: new IsolatedVMExecutor({
+    memoryMB: 128,
+    timeoutMs: 60_000,   // CPU time limit
+    wallTimeMs: 120_000, // total elapsed time limit
+  }),
 });
 ```
 
 | Executor | Package | Performance | Portability |
 |----------|---------|-------------|-------------|
 | `IsolatedVMExecutor` | `isolated-vm` | Native V8 speed | Node.js |
-| `QuickJSExecutor` | `quickjs-emscripten` | ~3-5x slower (still fast) | Node.js, Bun, browsers |
-
-Both are optional peer dependencies. Install at least one.
 
 ### Custom Executor
 

@@ -11,10 +11,12 @@ import type { Executor, ExecuteResult, SandboxOptions } from "../types.js";
 export class IsolatedVMExecutor implements Executor {
   private memoryMB: number;
   private timeoutMs: number;
+  private wallTimeMs: number;
 
   constructor(options: SandboxOptions = {}) {
     this.memoryMB = options.memoryMB ?? 64;
     this.timeoutMs = options.timeoutMs ?? 30_000;
+    this.wallTimeMs = options.wallTimeMs ?? 60_000;
   }
 
   async execute(
@@ -92,14 +94,28 @@ export class IsolatedVMExecutor implements Executor {
         }
       }
 
-      // Execute the code
+      // Execute the code with both CPU timeout and wall-clock timeout.
+      // The ivm timeout only covers CPU time; async host calls (request bridge)
+      // can stall indefinitely without a wall-clock guard.
       const wrappedCode = `(${code})()`;
       const script = await isolate.compileScript(wrappedCode);
-      const result = await script.run(context, {
-        timeout: this.timeoutMs,
-        promise: true,
-        copy: true,
-      });
+      const result = await Promise.race([
+        script.run(context, {
+          timeout: this.timeoutMs,
+          promise: true,
+          copy: true,
+        }),
+        new Promise<never>((_, reject) => {
+          const timer = setTimeout(
+            () => reject(new Error("Wall-clock timeout exceeded")),
+            this.wallTimeMs,
+          );
+          // Don't prevent process exit
+          if (typeof timer === "object" && timer !== null && "unref" in timer) {
+            (timer as { unref(): void }).unref();
+          }
+        }),
+      ]);
 
       context.release();
       return { result };

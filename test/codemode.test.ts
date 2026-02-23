@@ -100,6 +100,41 @@ describe("CodeMode", () => {
     });
   });
 
+  describe("namespace validation", () => {
+    it("rejects reserved names", () => {
+      for (const name of ["Object", "Array", "Promise", "spec", "console", "global"]) {
+        expect(() => new CodeMode({
+          spec: testSpec,
+          request: testHandler,
+          namespace: name,
+          executor: new TestExecutor(),
+        })).toThrow("reserved name");
+      }
+    });
+
+    it("rejects invalid JS identifiers", () => {
+      for (const name of ["123abc", "my-ns", "my ns", "a.b", ""]) {
+        expect(() => new CodeMode({
+          spec: testSpec,
+          request: testHandler,
+          namespace: name,
+          executor: new TestExecutor(),
+        })).toThrow("valid JavaScript identifier");
+      }
+    });
+
+    it("accepts valid namespaces", () => {
+      for (const name of ["api", "cnap", "_private", "$app", "myApi2"]) {
+        expect(() => new CodeMode({
+          spec: testSpec,
+          request: testHandler,
+          namespace: name,
+          executor: new TestExecutor(),
+        })).not.toThrow();
+      }
+    });
+  });
+
   describe("tools()", () => {
     it("returns search and execute tool definitions", () => {
       const tools = codemode.tools();

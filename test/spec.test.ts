@@ -62,6 +62,52 @@ describe("resolveRefs", () => {
     expect(result[0]).toEqual({ type: "string" });
     expect(result[1]).toBe("literal");
   });
+
+  it("resolves the same $ref used in sibling positions", () => {
+    const spec = {
+      components: {
+        schemas: {
+          Pet: { type: "object", properties: { name: { type: "string" } } },
+        },
+      },
+    };
+
+    const obj = {
+      fieldA: { $ref: "#/components/schemas/Pet" },
+      fieldB: { $ref: "#/components/schemas/Pet" },
+    };
+
+    const result = resolveRefs(obj, spec) as any;
+    // Both should resolve fully — not mark the second as $circular
+    expect(result.fieldA.type).toBe("object");
+    expect(result.fieldA.properties.name.type).toBe("string");
+    expect(result.fieldB.type).toBe("object");
+    expect(result.fieldB.properties.name.type).toBe("string");
+    expect(result.fieldB.$circular).toBeUndefined();
+  });
+
+  it("respects maxDepth limit", () => {
+    // Build a deep chain: A -> B -> C -> D -> ...
+    const schemas: Record<string, unknown> = {};
+    for (let i = 0; i < 10; i++) {
+      if (i < 9) {
+        schemas[`S${i}`] = { $ref: `#/components/schemas/S${i + 1}` };
+      } else {
+        schemas[`S${i}`] = { type: "string" };
+      }
+    }
+    const spec = { components: { schemas } };
+
+    // With maxDepth=5, should hit limit before reaching S9
+    const result = resolveRefs(
+      { $ref: "#/components/schemas/S0" },
+      spec,
+      undefined,
+      5,
+    ) as any;
+    expect(result.$circular).toBeDefined();
+    expect(result.$reason).toBe("max depth exceeded");
+  });
 });
 
 describe("extractServerBasePath", () => {

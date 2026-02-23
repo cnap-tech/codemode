@@ -2,38 +2,64 @@ import type { OpenAPISpec } from "./types.js";
 
 const HTTP_METHODS = ["get", "post", "put", "patch", "delete"] as const;
 
+const DEFAULT_MAX_REF_DEPTH = 50;
+
 /**
  * Recursively resolve all `$ref` pointers in an OpenAPI spec inline.
  * Circular references are replaced with `{ $circular: ref }`.
+ *
+ * The `seen` set tracks the current ancestor chain only (not globally),
+ * so the same $ref used in sibling positions resolves correctly.
+ * A memoization cache avoids re-resolving the same $ref multiple times.
+ *
+ * @param maxDepth - Maximum $ref resolution depth (default: 50)
  */
 export function resolveRefs(
   obj: unknown,
   root: Record<string, unknown>,
   seen = new Set<string>(),
+  maxDepth = DEFAULT_MAX_REF_DEPTH,
+  _cache = new Map<string, unknown>(),
 ): unknown {
   if (obj === null || obj === undefined) return obj;
   if (typeof obj !== "object") return obj;
   if (Array.isArray(obj))
-    return obj.map((item) => resolveRefs(item, root, seen));
+    return obj.map((item) => resolveRefs(item, root, seen, maxDepth, _cache));
 
   const record = obj as Record<string, unknown>;
 
   if ("$ref" in record && typeof record.$ref === "string") {
     const ref = record.$ref;
+
+    // Circular: this $ref is already in the current ancestor chain
     if (seen.has(ref)) return { $circular: ref };
-    seen.add(ref);
+
+    // Depth limit
+    if (seen.size >= maxDepth) {
+      return { $circular: ref, $reason: "max depth exceeded" };
+    }
+
+    // Memoization: return cached result if available
+    if (_cache.has(ref)) return _cache.get(ref);
 
     const parts = ref.replace("#/", "").split("/");
     let resolved: unknown = root;
     for (const part of parts) {
       resolved = (resolved as Record<string, unknown>)?.[part];
     }
-    return resolveRefs(resolved, root, seen);
+
+    // Clone seen for this branch so siblings don't share state
+    const branchSeen = new Set(seen);
+    branchSeen.add(ref);
+
+    const result = resolveRefs(resolved, root, branchSeen, maxDepth, _cache);
+    _cache.set(ref, result);
+    return result;
   }
 
   const result: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(record)) {
-    result[key] = resolveRefs(value, root, seen);
+    result[key] = resolveRefs(value, root, seen, maxDepth, _cache);
   }
   return result;
 }
@@ -60,7 +86,7 @@ export function extractServerBasePath(spec: OpenAPISpec): string {
     | undefined;
   if (!servers?.length) return "";
 
-  const url = servers[0].url;
+  const url = servers[0]!.url;
   try {
     // Full URL like "https://petstore.io/api/v3"
     const parsed = new URL(url);
@@ -76,8 +102,13 @@ export function extractServerBasePath(spec: OpenAPISpec): string {
  * Resolves all $refs inline and extracts only the fields needed for search.
  * Prepends the server base path to all path keys so they're directly usable.
  * Preserves info and components.schemas alongside processed paths.
+ *
+ * @param maxRefDepth - Maximum $ref resolution depth (default: 50)
  */
-export function processSpec(spec: OpenAPISpec): Record<string, unknown> {
+export function processSpec(
+  spec: OpenAPISpec,
+  maxRefDepth = DEFAULT_MAX_REF_DEPTH,
+): Record<string, unknown> {
   const rawPaths = (spec.paths ?? {}) as Record<
     string,
     Record<string, OperationObject>
@@ -101,14 +132,20 @@ export function processSpec(spec: OpenAPISpec): Record<string, unknown> {
           parameters: resolveRefs(
             op.parameters,
             spec as Record<string, unknown>,
+            undefined,
+            maxRefDepth,
           ),
           requestBody: resolveRefs(
             op.requestBody,
             spec as Record<string, unknown>,
+            undefined,
+            maxRefDepth,
           ),
           responses: resolveRefs(
             op.responses,
             spec as Record<string, unknown>,
+            undefined,
+            maxRefDepth,
           ),
         };
       }
@@ -123,6 +160,8 @@ export function processSpec(spec: OpenAPISpec): Record<string, unknown> {
     result.components = resolveRefs(
       (spec as Record<string, unknown>).components,
       spec as Record<string, unknown>,
+      undefined,
+      maxRefDepth,
     );
   }
 

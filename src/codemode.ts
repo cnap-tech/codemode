@@ -12,6 +12,28 @@ import type {
   ToolDefinition,
 } from "./types.js";
 
+const RESERVED_NAMES = new Set([
+  "Object", "Array", "Promise", "Function", "String", "Number", "Boolean",
+  "Symbol", "Map", "Set", "WeakMap", "WeakSet", "Date", "RegExp", "Error",
+  "JSON", "Math", "Proxy", "Reflect", "globalThis", "undefined", "null",
+  "NaN", "Infinity", "console", "spec", "global",
+]);
+
+const VALID_JS_IDENTIFIER = /^[a-zA-Z_$][a-zA-Z0-9_$]*$/;
+
+function validateNamespace(namespace: string): void {
+  if (!VALID_JS_IDENTIFIER.test(namespace)) {
+    throw new Error(
+      `Invalid namespace "${namespace}": must be a valid JavaScript identifier`,
+    );
+  }
+  if (RESERVED_NAMES.has(namespace)) {
+    throw new Error(
+      `Invalid namespace "${namespace}": conflicts with reserved name`,
+    );
+  }
+}
+
 /**
  * CodeMode provides `search` and `execute` MCP tools that let an AI agent
  * discover and call your API by writing JavaScript code in a sandboxed runtime.
@@ -66,8 +88,14 @@ export class CodeMode {
     this.executeToolName = "execute";
     this.maxResponseTokens = options.maxResponseTokens ?? 25_000;
 
+    validateNamespace(this.namespace);
+
     const baseUrl = options.baseUrl ?? "http://localhost";
-    const bridge = createRequestBridge(options.request, baseUrl);
+    const bridge = createRequestBridge(options.request, baseUrl, {
+      maxRequests: options.maxRequests,
+      maxResponseBytes: options.maxResponseBytes,
+      allowedHeaders: options.allowedHeaders,
+    });
     this.requestBridge = (...args: unknown[]) => bridge(args[0] as any);
   }
 
@@ -163,7 +191,7 @@ export class CodeMode {
     if (this.processedSpec) return this.processedSpec;
 
     const raw = await this.resolveSpec();
-    this.processedSpec = processSpec(raw);
+    this.processedSpec = processSpec(raw, this.options.maxRefDepth);
 
     // Extract context for tool descriptions
     const tags = extractTags(raw);
