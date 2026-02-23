@@ -11,11 +11,14 @@ This is the same pattern [Cloudflare uses](https://blog.cloudflare.com/code-mode
 
 ## Try It
 
+Requires [mise](https://mise.jdx.dev/) for tooling (Node.js, pnpm, Task):
+
 ```bash
 git clone https://github.com/cnap-tech/codemode.git
 cd codemode
-pnpm install && pnpm build
-pnpm tsx examples/petstore.ts
+mise install   # installs Node 24, pnpm 10, Task
+task install   # installs dependencies
+task example   # runs the Petstore demo
 ```
 
 Fetches the real Petstore OpenAPI spec from the web, then runs search + execute against a local Hono mock — no API keys needed.
