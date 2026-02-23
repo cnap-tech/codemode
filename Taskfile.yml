@@ -34,8 +34,9 @@ tasks:
       - pnpm vitest {{.CLI_ARGS}}
 
   lint:
-    desc: Type-check with TypeScript
+    desc: Lint and type-check
     cmds:
+      - pnpm oxlint
       - pnpm tsc --noEmit
 
   example:
