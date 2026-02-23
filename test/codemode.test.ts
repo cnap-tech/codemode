@@ -1,0 +1,358 @@
+import { describe, it, expect, beforeEach } from "vitest";
+import { CodeMode } from "../src/codemode.js";
+import type { Executor, ExecuteResult } from "../src/types.js";
+
+// A simple in-memory executor for testing (no sandbox dependency needed)
+class TestExecutor implements Executor {
+  async execute(
+    code: string,
+    globals: Record<string, unknown>,
+  ): Promise<ExecuteResult> {
+    const logs: string[] = [];
+
+    // Create a minimal sandbox using Function constructor
+    // (NOT safe for production - only for testing)
+    const globalNames = Object.keys(globals);
+    const globalValues = Object.values(globals);
+
+    const consoleMock = {
+      log: (...args: unknown[]) =>
+        logs.push(args.map((a) => (typeof a === "string" ? a : JSON.stringify(a))).join(" ")),
+      warn: (...args: unknown[]) => logs.push(args.map(String).join(" ")),
+      error: (...args: unknown[]) => logs.push(args.map(String).join(" ")),
+    };
+
+    try {
+      const fn = new Function(
+        "console",
+        ...globalNames,
+        `return (${code})();`,
+      );
+      const result = await fn(consoleMock, ...globalValues);
+      return { result, logs };
+    } catch (err) {
+      return {
+        result: undefined,
+        error: err instanceof Error ? err.message : String(err),
+        logs,
+      };
+    }
+  }
+}
+
+const testSpec = {
+  openapi: "3.0.0",
+  info: { title: "Test API", version: "1.0.0" },
+  paths: {
+    "/v1/clusters": {
+      get: {
+        summary: "List clusters",
+        operationId: "listClusters",
+        responses: { "200": { description: "OK" } },
+      },
+    },
+    "/v1/clusters/{id}": {
+      get: {
+        summary: "Get cluster",
+        operationId: "getCluster",
+        parameters: [{ name: "id", in: "path", required: true }],
+        responses: { "200": { description: "OK" } },
+      },
+    },
+    "/v1/products": {
+      get: {
+        summary: "List products",
+        operationId: "listProducts",
+        responses: { "200": { description: "OK" } },
+      },
+      post: {
+        summary: "Create product",
+        operationId: "createProduct",
+        responses: { "201": { description: "Created" } },
+      },
+    },
+  },
+};
+
+// Simple fetch-like handler for testing
+function testHandler(input: string | URL | Request): Response {
+  const url = typeof input === "string" ? new URL(input) : input instanceof URL ? input : new URL(input.url);
+  const path = url.pathname;
+
+  if (path === "/v1/clusters") {
+    return Response.json([
+      { id: "eu", name: "EU Prod" },
+      { id: "us", name: "US Prod" },
+    ]);
+  }
+  if (path.startsWith("/v1/clusters/")) {
+    const id = path.split("/").pop();
+    return Response.json({ id, name: `Cluster ${id}` });
+  }
+  if (path === "/v1/products") {
+    return Response.json([{ id: "p1", name: "Redis" }]);
+  }
+
+  return new Response("Not Found", { status: 404 });
+}
+
+describe("CodeMode", () => {
+  let codemode: CodeMode;
+
+  beforeEach(() => {
+    codemode = new CodeMode({
+      spec: testSpec,
+      request: testHandler,
+      namespace: "api",
+      executor: new TestExecutor(),
+    });
+  });
+
+  describe("tools()", () => {
+    it("returns search and execute tool definitions", () => {
+      const tools = codemode.tools();
+      expect(tools).toHaveLength(2);
+      expect(tools[0]!.name).toBe("search");
+      expect(tools[1]!.name).toBe("execute");
+      expect(tools[0]!.inputSchema.properties).toHaveProperty("code");
+      expect(tools[1]!.inputSchema.properties).toHaveProperty("code");
+    });
+
+    it("supports custom tool names", () => {
+      codemode.setToolNames("discover", "run");
+      const tools = codemode.tools();
+      expect(tools[0]!.name).toBe("discover");
+      expect(tools[1]!.name).toBe("run");
+    });
+  });
+
+  describe("search()", () => {
+    it("searches the OpenAPI spec by path", async () => {
+      const result = await codemode.search(`
+        async () => {
+          return Object.entries(spec.paths)
+            .filter(([p]) => p.includes('/clusters'))
+            .flatMap(([path, methods]) =>
+              Object.entries(methods)
+                .filter(([m]) => ['get','post','put','delete'].includes(m))
+                .map(([method, op]) => ({
+                  method: method.toUpperCase(), path, summary: op.summary
+                }))
+            );
+        }
+      `);
+
+      expect(result.isError).toBeUndefined();
+      const data = JSON.parse(result.content[0]!.text);
+      expect(data).toHaveLength(2);
+      expect(data[0]).toEqual({
+        method: "GET",
+        path: "/v1/clusters",
+        summary: "List clusters",
+      });
+    });
+
+    it("can access spec metadata", async () => {
+      const result = await codemode.search(`
+        async () => ({ title: spec.info.title, version: spec.info.version })
+      `);
+      const data = JSON.parse(result.content[0]!.text);
+      expect(data).toEqual({ title: "Test API", version: "1.0.0" });
+    });
+
+    it("returns error for invalid code", async () => {
+      const result = await codemode.search(`not valid code at all!!!`);
+      expect(result.isError).toBe(true);
+    });
+
+    it("supports spec as async getter", async () => {
+      const cm = new CodeMode({
+        spec: async () => testSpec,
+        request: testHandler,
+        executor: new TestExecutor(),
+      });
+
+      const result = await cm.search(`
+        async () => Object.keys(spec.paths)
+      `);
+      const paths = JSON.parse(result.content[0]!.text);
+      expect(paths).toContain("/v1/clusters");
+    });
+  });
+
+  describe("execute()", () => {
+    it("makes GET requests", async () => {
+      const result = await codemode.execute(`
+        async () => {
+          const res = await api.request({ method: "GET", path: "/v1/clusters" });
+          return res.body;
+        }
+      `);
+
+      expect(result.isError).toBeUndefined();
+      const data = JSON.parse(result.content[0]!.text);
+      expect(data).toEqual([
+        { id: "eu", name: "EU Prod" },
+        { id: "us", name: "US Prod" },
+      ]);
+    });
+
+    it("supports path parameters", async () => {
+      const result = await codemode.execute(`
+        async () => {
+          const res = await api.request({ method: "GET", path: "/v1/clusters/eu" });
+          return res.body;
+        }
+      `);
+
+      const data = JSON.parse(result.content[0]!.text);
+      expect(data).toEqual({ id: "eu", name: "Cluster eu" });
+    });
+
+    it("chains multiple requests", async () => {
+      const result = await codemode.execute(`
+        async () => {
+          const clusters = await api.request({ method: "GET", path: "/v1/clusters" });
+          const first = clusters.body[0];
+          const detail = await api.request({ method: "GET", path: "/v1/clusters/" + first.id });
+          return { cluster: detail.body };
+        }
+      `);
+
+      const data = JSON.parse(result.content[0]!.text);
+      expect(data.cluster.id).toBe("eu");
+    });
+
+    it("handles 404 responses", async () => {
+      const result = await codemode.execute(`
+        async () => {
+          const res = await api.request({ method: "GET", path: "/v1/nonexistent" });
+          return { status: res.status };
+        }
+      `);
+
+      const data = JSON.parse(result.content[0]!.text);
+      expect(data.status).toBe(404);
+    });
+
+    it("respects custom namespace", async () => {
+      const cm = new CodeMode({
+        spec: testSpec,
+        request: testHandler,
+        namespace: "cnap",
+        executor: new TestExecutor(),
+      });
+
+      const result = await cm.execute(`
+        async () => {
+          const res = await cnap.request({ method: "GET", path: "/v1/clusters" });
+          return res.body;
+        }
+      `);
+
+      const data = JSON.parse(result.content[0]!.text);
+      expect(data).toHaveLength(2);
+    });
+  });
+
+  describe("callTool()", () => {
+    it("routes to search", async () => {
+      const result = await codemode.callTool("search", {
+        code: `async () => Object.keys(spec.paths)`,
+      });
+      expect(result.isError).toBeUndefined();
+    });
+
+    it("routes to execute", async () => {
+      const result = await codemode.callTool("execute", {
+        code: `async () => {
+          const res = await api.request({ method: "GET", path: "/v1/products" });
+          return res.body;
+        }`,
+      });
+      expect(result.isError).toBeUndefined();
+    });
+
+    it("returns error for unknown tool", async () => {
+      const result = await codemode.callTool("unknown", { code: "" });
+      expect(result.isError).toBe(true);
+    });
+  });
+
+  describe("console output", () => {
+    it("captures console.log from sandbox", async () => {
+      const result = await codemode.search(`
+        async () => {
+          console.log("searching...");
+          return Object.keys(spec.paths);
+        }
+      `);
+
+      expect(result.content[0]!.text).toContain("searching...");
+    });
+  });
+});
+
+describe("Hono integration", () => {
+  it("works with Hono app.request()", async () => {
+    // Dynamically import Hono to verify integration works
+    const { Hono } = await import("hono");
+    const app = new Hono();
+
+    app.get("/v1/health", (c) => c.json({ status: "ok" }));
+    app.get("/v1/items", (c) => c.json([{ id: 1, name: "Widget" }]));
+    app.post("/v1/items", async (c) => {
+      const body = await c.req.json();
+      return c.json({ id: 2, ...body }, 201);
+    });
+
+    const codemode = new CodeMode({
+      spec: {
+        openapi: "3.0.0",
+        info: { title: "Test", version: "1.0.0" },
+        paths: {
+          "/v1/health": { get: { summary: "Health check" } },
+          "/v1/items": {
+            get: { summary: "List items" },
+            post: { summary: "Create item" },
+          },
+        },
+      },
+      request: app.request.bind(app),
+      namespace: "myapp",
+      executor: new TestExecutor(),
+    });
+
+    // Search
+    const searchResult = await codemode.search(`
+      async () => Object.keys(spec.paths)
+    `);
+    const paths = JSON.parse(searchResult.content[0]!.text);
+    expect(paths).toEqual(["/v1/health", "/v1/items"]);
+
+    // Execute GET
+    const getResult = await codemode.execute(`
+      async () => {
+        const res = await myapp.request({ method: "GET", path: "/v1/items" });
+        return res.body;
+      }
+    `);
+    const items = JSON.parse(getResult.content[0]!.text);
+    expect(items).toEqual([{ id: 1, name: "Widget" }]);
+
+    // Execute POST
+    const postResult = await codemode.execute(`
+      async () => {
+        const res = await myapp.request({
+          method: "POST",
+          path: "/v1/items",
+          body: { name: "Gadget" }
+        });
+        return { status: res.status, body: res.body };
+      }
+    `);
+    const created = JSON.parse(postResult.content[0]!.text);
+    expect(created.status).toBe(201);
+    expect(created.body.name).toBe("Gadget");
+  });
+});
