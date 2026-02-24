@@ -75,7 +75,7 @@ interface OperationObject {
   tags?: string[];
   parameters?: unknown;
   requestBody?: unknown;
-  responses?: unknown;
+  responses?: Record<string, unknown>;
 }
 
 /**
@@ -128,6 +128,16 @@ export function processSpec(
     for (const method of HTTP_METHODS) {
       const op = pathItem[method];
       if (op) {
+        // Only keep success responses (2xx) — error schemas are redundant noise
+        const successResponses: Record<string, unknown> = {};
+        if (op.responses) {
+          for (const [status, resp] of Object.entries(op.responses)) {
+            if (status.startsWith("2") || status === "default") {
+              successResponses[status] = resp;
+            }
+          }
+        }
+
         paths[fullPath][method] = {
           summary: op.summary,
           description: op.description,
@@ -145,7 +155,7 @@ export function processSpec(
             maxRefDepth,
           ),
           responses: resolveRefs(
-            op.responses,
+            Object.keys(successResponses).length > 0 ? successResponses : op.responses,
             spec as Record<string, unknown>,
             undefined,
             maxRefDepth,
