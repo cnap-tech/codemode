@@ -373,6 +373,26 @@ describe("Hono integration", () => {
 });
 
 describe("request counter resets per execution", () => {
+  it("returns error (not crash) when request limit exceeded", async () => {
+    const cm = new CodeMode({
+      spec: testSpec,
+      request: testHandler,
+      maxRequests: 1,
+      executor: new TestExecutor(),
+    });
+
+    const result = await cm.execute(`
+      async () => {
+        await api.request({ method: "GET", path: "/v1/clusters" });
+        await api.request({ method: "GET", path: "/v1/products" });
+        return "should not reach here";
+      }
+    `);
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0]!.text).toContain("Request limit exceeded");
+  });
+
   it("allows maxRequests per execute() call, not per instance", async () => {
     const cm = new CodeMode({
       spec: testSpec,
