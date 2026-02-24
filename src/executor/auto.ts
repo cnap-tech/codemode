@@ -1,7 +1,7 @@
 import type { Executor, SandboxOptions } from "../types.js";
 
 /**
- * Auto-detect and create an executor from available peer dependencies.
+ * Create an executor using the isolated-vm peer dependency.
  */
 export async function createExecutor(
   options: SandboxOptions = {},

@@ -371,3 +371,34 @@ describe("Hono integration", () => {
     expect(created.body.name).toBe("Gadget");
   });
 });
+
+describe("request counter resets per execution", () => {
+  it("allows maxRequests per execute() call, not per instance", async () => {
+    const cm = new CodeMode({
+      spec: testSpec,
+      request: testHandler,
+      maxRequests: 2,
+      executor: new TestExecutor(),
+    });
+
+    // First execution: 2 requests (at limit)
+    const r1 = await cm.execute(`
+      async () => {
+        await api.request({ method: "GET", path: "/v1/clusters" });
+        await api.request({ method: "GET", path: "/v1/products" });
+        return "ok";
+      }
+    `);
+    expect(r1.isError).toBeUndefined();
+
+    // Second execution: should also get 2 fresh requests (counter reset)
+    const r2 = await cm.execute(`
+      async () => {
+        await api.request({ method: "GET", path: "/v1/clusters" });
+        await api.request({ method: "GET", path: "/v1/products" });
+        return "ok";
+      }
+    `);
+    expect(r2.isError).toBeUndefined();
+  });
+});

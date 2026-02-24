@@ -4,6 +4,9 @@ const HTTP_METHODS = ["get", "post", "put", "patch", "delete"] as const;
 
 const DEFAULT_MAX_REF_DEPTH = 50;
 
+/** Keys that must never be traversed or copied during $ref resolution. */
+const DANGEROUS_KEYS = new Set(["__proto__", "constructor", "prototype"]);
+
 /**
  * Recursively resolve all `$ref` pointers in an OpenAPI spec inline.
  * Circular references are replaced with `{ $circular: ref }`.
@@ -45,6 +48,7 @@ export function resolveRefs(
     const parts = ref.replace("#/", "").split("/");
     let resolved: unknown = root;
     for (const part of parts) {
+      if (DANGEROUS_KEYS.has(part)) return { $ref: ref, $error: "unsafe ref path" };
       resolved = (resolved as Record<string, unknown>)?.[part];
     }
 
@@ -59,6 +63,7 @@ export function resolveRefs(
 
   const result: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(record)) {
+    if (DANGEROUS_KEYS.has(key)) continue;
     result[key] = resolveRefs(value, root, seen, maxDepth, _cache);
   }
   return result;

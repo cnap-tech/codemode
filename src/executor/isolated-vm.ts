@@ -27,8 +27,9 @@ export class IsolatedVMExecutor implements Executor {
     const ivm = (await import("isolated-vm")).default ?? (await import("isolated-vm"));
     const isolate = new ivm.Isolate({ memoryLimit: this.memoryMB });
 
+    let context: Awaited<ReturnType<typeof isolate.createContext>> | undefined;
     try {
-      const context = await isolate.createContext();
+      context = await isolate.createContext();
       const jail = context.global;
       await jail.set("global", jail.derefInto());
 
@@ -102,25 +103,26 @@ export class IsolatedVMExecutor implements Executor {
       // can stall indefinitely without a wall-clock guard.
       const wrappedCode = `(${code})()`;
       const script = await isolate.compileScript(wrappedCode);
+
+      let wallTimer: ReturnType<typeof setTimeout> | undefined;
       const result = await Promise.race([
         script.run(context, {
           timeout: this.timeoutMs,
           promise: true,
           copy: true,
-        }),
+        }).finally(() => clearTimeout(wallTimer)),
         new Promise<never>((_, reject) => {
-          const timer = setTimeout(
+          wallTimer = setTimeout(
             () => reject(new Error("Wall-clock timeout exceeded")),
             this.wallTimeMs,
           );
           // Don't prevent process exit
-          if (typeof timer === "object" && timer !== null && "unref" in timer) {
-            (timer as { unref(): void }).unref();
+          if (typeof wallTimer === "object" && wallTimer !== null && "unref" in wallTimer) {
+            (wallTimer as { unref(): void }).unref();
           }
         }),
       ]);
 
-      context.release();
       return { result };
     } catch (err) {
       return {
@@ -128,6 +130,7 @@ export class IsolatedVMExecutor implements Executor {
         error: err instanceof Error ? err.message : String(err),
       };
     } finally {
+      context?.release();
       if (!isolate.isDisposed) {
         isolate.dispose();
       }

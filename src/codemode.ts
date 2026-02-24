@@ -1,5 +1,5 @@
 import { createExecutor } from "./executor/auto.js";
-import { createRequestBridge } from "./request-bridge.js";
+import { createRequestBridge, type SandboxRequestOptions } from "./request-bridge.js";
 import { extractTags, processSpec } from "./spec.js";
 import { createExecuteToolDefinition, createSearchToolDefinition } from "./tools.js";
 import { truncateResponse } from "./truncate.js";
@@ -7,6 +7,7 @@ import type {
   CodeModeOptions,
   Executor,
   OpenAPISpec,
+  RequestHandler,
   SpecProvider,
   ToolCallResult,
   ToolDefinition,
@@ -66,7 +67,6 @@ function validateNamespace(namespace: string): void {
  */
 export class CodeMode {
   private specProvider: SpecProvider;
-  private requestBridge: (...args: unknown[]) => Promise<unknown>;
   private namespace: string;
   private executor: Executor | null;
   private executorPromise: Promise<Executor> | null = null;
@@ -74,6 +74,12 @@ export class CodeMode {
   private searchToolName: string;
   private executeToolName: string;
   private maxResponseTokens: number;
+
+  // Bridge config — a fresh bridge is created per execute() call
+  // so the request counter resets each time.
+  private bridgeHandler: RequestHandler;
+  private bridgeBaseUrl: string;
+  private bridgeOptions: { maxRequests?: number; maxResponseBytes?: number; allowedHeaders?: string[] };
 
   // Cached processed spec & context for tool descriptions
   private processedSpec: Record<string, unknown> | null = null;
@@ -90,13 +96,13 @@ export class CodeMode {
 
     validateNamespace(this.namespace);
 
-    const baseUrl = options.baseUrl ?? "http://localhost";
-    const bridge = createRequestBridge(options.request, baseUrl, {
+    this.bridgeHandler = options.request;
+    this.bridgeBaseUrl = options.baseUrl ?? "http://localhost";
+    this.bridgeOptions = {
       maxRequests: options.maxRequests,
       maxResponseBytes: options.maxResponseBytes,
       allowedHeaders: options.allowedHeaders,
-    });
-    this.requestBridge = (...args: unknown[]) => bridge(args[0] as any);
+    };
   }
 
   /**
@@ -158,8 +164,12 @@ export class CodeMode {
   async execute(code: string): Promise<ToolCallResult> {
     const executor = await this.getExecutor();
 
+    // Fresh bridge per execution — request counter resets each time
+    const bridge = createRequestBridge(
+      this.bridgeHandler, this.bridgeBaseUrl, this.bridgeOptions,
+    );
     const client = {
-      request: this.requestBridge,
+      request: (...args: unknown[]) => bridge(args[0] as SandboxRequestOptions),
     };
 
     const result = await executor.execute(code, {

@@ -86,6 +86,28 @@ describe("resolveRefs", () => {
     expect(result.fieldB.$circular).toBeUndefined();
   });
 
+  it("blocks __proto__ and constructor in $ref paths", () => {
+    const spec = {
+      components: { schemas: { Safe: { type: "string" } } },
+    };
+
+    // __proto__ in $ref path
+    const r1 = resolveRefs({ $ref: "#/__proto__/polluted" }, spec) as any;
+    expect(r1.$error).toBe("unsafe ref path");
+
+    // constructor in $ref path
+    const r2 = resolveRefs({ $ref: "#/constructor/prototype" }, spec) as any;
+    expect(r2.$error).toBe("unsafe ref path");
+  });
+
+  it("skips __proto__ keys in objects", () => {
+    const obj = { safe: "yes", __proto__: "polluted", constructor: "bad" };
+    const result = resolveRefs(obj, {}) as any;
+    expect(result.safe).toBe("yes");
+    expect(Object.prototype.hasOwnProperty.call(result, "__proto__")).toBe(false);
+    expect(Object.prototype.hasOwnProperty.call(result, "constructor")).toBe(false);
+  });
+
   it("respects maxDepth limit", () => {
     // Build a deep chain: A -> B -> C -> D -> ...
     const schemas: Record<string, unknown> = {};

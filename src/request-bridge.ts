@@ -41,16 +41,77 @@ const BLOCKED_HEADER_PATTERNS = [
   /^authorization$/i,
   /^cookie$/i,
   /^host$/i,
+  /^origin$/i,
+  /^referer$/i,
   /^x-forwarded-/i,
+  /^x-real-ip$/i,
+  /^x-client-ip$/i,
+  /^cf-connecting-ip$/i,
+  /^true-client-ip$/i,
   /^proxy-/i,
+  /^transfer-encoding$/i,
+  /^connection$/i,
+  /^upgrade$/i,
+  /^te$/i,
 ];
 
 const DEFAULT_MAX_REQUESTS = 50;
 const DEFAULT_MAX_RESPONSE_BYTES = 10 * 1024 * 1024; // 10MB
 
 /**
- * Validate that a path is safe (no SSRF via absolute URL injection).
- * Rejects paths containing "://", not starting with "/", or starting with "//".
+ * Read a response body as text, aborting early if it exceeds maxBytes.
+ * Streams the body in chunks to avoid buffering the entire response
+ * into host memory before checking the size limit.
+ */
+async function readResponseWithLimit(
+  response: Response,
+  maxBytes: number,
+): Promise<string> {
+  const reader = response.body?.getReader();
+  if (!reader) {
+    // No body stream — fall back to .text() (e.g., empty responses)
+    const text = await response.text();
+    if (text.length > maxBytes) {
+      throw new Error(
+        `Response too large: ${text.length} bytes exceeds limit of ${maxBytes} bytes`,
+      );
+    }
+    return text;
+  }
+
+  const chunks: Uint8Array[] = [];
+  let totalBytes = 0;
+  try {
+    // Streaming read — must be sequential
+    for (;;) {
+      const { done, value } = await reader.read(); // oxlint-disable-line no-await-in-loop
+      if (done) break;
+      totalBytes += value.byteLength;
+      if (totalBytes > maxBytes) {
+        throw new Error(
+          `Response too large: exceeded limit of ${maxBytes} bytes`,
+        );
+      }
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+
+  const decoder = new TextDecoder();
+  if (chunks.length === 1) return decoder.decode(chunks[0]);
+  // Concatenate chunks
+  const combined = new Uint8Array(totalBytes);
+  let offset = 0;
+  for (const chunk of chunks) {
+    combined.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return decoder.decode(combined);
+}
+
+/**
+ * Validate that a path is safe (no SSRF, no request smuggling).
  */
 function validatePath(path: string): void {
   if (path.includes("://")) {
@@ -61,6 +122,15 @@ function validatePath(path: string): void {
   }
   if (path.startsWith("//")) {
     throw new Error(`Invalid path: must not start with "//" — got "${path}"`);
+  }
+  if (path.includes("\0")) {
+    throw new Error("Invalid path: must not contain null bytes");
+  }
+  if (/[\r\n]/.test(path)) {
+    throw new Error("Invalid path: must not contain CR/LF characters");
+  }
+  if (path.includes("\\")) {
+    throw new Error("Invalid path: must not contain backslashes");
   }
 }
 
@@ -158,22 +228,18 @@ export function createRequestBridge(
     // Call the host handler
     const response = await handler(url.toString(), init);
 
-    // Parse response with size limit
+    // Parse response headers
     const responseHeaders: Record<string, string> = {};
     response.headers.forEach((value, key) => {
       responseHeaders[key] = value;
     });
 
+    // Read response body with streaming size limit to avoid host OOM.
+    // Abort as soon as accumulated bytes exceed the limit.
     const contentType = response.headers.get("content-type") ?? "";
+    const text = await readResponseWithLimit(response, maxResponseBytes);
+
     let responseBody: unknown;
-
-    const text = await response.text();
-    if (text.length > maxResponseBytes) {
-      throw new Error(
-        `Response too large: ${text.length} bytes exceeds limit of ${maxResponseBytes} bytes`,
-      );
-    }
-
     if (contentType.includes("application/json")) {
       try {
         responseBody = JSON.parse(text);

@@ -46,6 +46,24 @@ describe("SSRF path validation", () => {
     const body = res.body as { url: string };
     expect(body.url).toBe("http://localhost/v1/clusters");
   });
+
+  it("rejects paths with null bytes", async () => {
+    await expect(
+      bridge({ method: "GET", path: "/api\x00/admin" }),
+    ).rejects.toThrow("null bytes");
+  });
+
+  it("rejects paths with CR/LF (request smuggling)", async () => {
+    await expect(
+      bridge({ method: "GET", path: "/api\r\nX-Injected: true" }),
+    ).rejects.toThrow("CR/LF");
+  });
+
+  it("rejects paths with backslashes", async () => {
+    await expect(
+      bridge({ method: "GET", path: "/api\\evil.com" }),
+    ).rejects.toThrow("backslashes");
+  });
 });
 
 describe("HTTP method validation", () => {
@@ -117,8 +135,18 @@ describe("header filtering", () => {
         "authorization": "Bearer secret",
         "cookie": "session=abc",
         "host": "evil.com",
+        "origin": "https://evil.com",
+        "referer": "https://evil.com/page",
         "x-forwarded-for": "1.2.3.4",
+        "x-real-ip": "1.2.3.4",
+        "x-client-ip": "1.2.3.4",
+        "cf-connecting-ip": "1.2.3.4",
+        "true-client-ip": "1.2.3.4",
         "proxy-authorization": "secret",
+        "transfer-encoding": "chunked",
+        "connection": "keep-alive",
+        "upgrade": "websocket",
+        "te": "trailers",
         "x-custom": "safe",
         "accept": "application/json",
       },
@@ -128,8 +156,18 @@ describe("header filtering", () => {
     expect(body.headers["authorization"]).toBeUndefined();
     expect(body.headers["cookie"]).toBeUndefined();
     expect(body.headers["host"]).toBeUndefined();
+    expect(body.headers["origin"]).toBeUndefined();
+    expect(body.headers["referer"]).toBeUndefined();
     expect(body.headers["x-forwarded-for"]).toBeUndefined();
+    expect(body.headers["x-real-ip"]).toBeUndefined();
+    expect(body.headers["x-client-ip"]).toBeUndefined();
+    expect(body.headers["cf-connecting-ip"]).toBeUndefined();
+    expect(body.headers["true-client-ip"]).toBeUndefined();
     expect(body.headers["proxy-authorization"]).toBeUndefined();
+    expect(body.headers["transfer-encoding"]).toBeUndefined();
+    expect(body.headers["connection"]).toBeUndefined();
+    expect(body.headers["upgrade"]).toBeUndefined();
+    expect(body.headers["te"]).toBeUndefined();
     expect(body.headers["x-custom"]).toBe("safe");
     expect(body.headers["accept"]).toBe("application/json");
   });
