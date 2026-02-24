@@ -5,7 +5,6 @@ interface OperationInfo {
   summary?: string;
   description?: string;
   tags?: string[];
-  operationId?: string;
   parameters?: Array<{ name: string; in: string; required?: boolean; schema?: unknown; description?: string }>;
   requestBody?: { required?: boolean; content?: Record<string, { schema?: unknown }> };
   responses?: Record<string, { description?: string; content?: Record<string, { schema?: unknown }> }>;
@@ -21,8 +20,6 @@ interface PathItem {
 
 declare const spec: {
   paths: Record<string, PathItem>;
-  components?: { schemas?: Record<string, unknown> };
-  info?: { title?: string; version?: string; description?: string };
 };
 `;
 

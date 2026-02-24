@@ -92,7 +92,7 @@ export class CodeMode {
     this.executor = options.executor ?? null;
     this.searchToolName = "search";
     this.executeToolName = "execute";
-    this.maxResponseTokens = options.maxResponseTokens ?? 25_000;
+    this.maxResponseTokens = options.maxResponseTokens ?? 6_000;
 
     validateNamespace(this.namespace);
 

@@ -179,12 +179,12 @@ describe("CodeMode", () => {
       });
     });
 
-    it("can access spec metadata", async () => {
+    it("can access spec paths", async () => {
       const result = await codemode.search(`
-        async () => ({ title: spec.info.title, version: spec.info.version })
+        async () => Object.keys(spec.paths)
       `);
       const data = JSON.parse(result.content[0]!.text);
-      expect(data).toEqual({ title: "Test API", version: "1.0.0" });
+      expect(data).toContain("/v1/clusters");
     });
 
     it("returns error for invalid code", async () => {

@@ -73,7 +73,6 @@ interface OperationObject {
   summary?: string;
   description?: string;
   tags?: string[];
-  operationId?: string;
   parameters?: unknown;
   requestBody?: unknown;
   responses?: unknown;
@@ -106,7 +105,7 @@ export function extractServerBasePath(spec: OpenAPISpec): string {
  * Process an OpenAPI spec into a simplified format for the search tool.
  * Resolves all $refs inline and extracts only the fields needed for search.
  * Prepends the server base path to all path keys so they're directly usable.
- * Preserves info and components.schemas alongside processed paths.
+ * Only paths are returned — info and components are omitted since refs are resolved inline.
  *
  * @param maxRefDepth - Maximum $ref resolution depth (default: 50)
  */
@@ -133,7 +132,6 @@ export function processSpec(
           summary: op.summary,
           description: op.description,
           tags: op.tags,
-          operationId: op.operationId,
           parameters: resolveRefs(
             op.parameters,
             spec as Record<string, unknown>,
@@ -157,20 +155,8 @@ export function processSpec(
     }
   }
 
-  const result: Record<string, unknown> = { paths };
-
-  if (spec.info) result.info = spec.info;
-  // servers is omitted — the base path is already prepended to all path keys
-  if ((spec as Record<string, unknown>).components) {
-    result.components = resolveRefs(
-      (spec as Record<string, unknown>).components,
-      spec as Record<string, unknown>,
-      undefined,
-      maxRefDepth,
-    );
-  }
-
-  return result;
+  // Only paths — info and components are omitted since all $refs are resolved inline.
+  return { paths };
 }
 
 /**

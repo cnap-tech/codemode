@@ -1,5 +1,5 @@
 const CHARS_PER_TOKEN = 4;
-const DEFAULT_MAX_TOKENS = 25_000;
+const DEFAULT_MAX_TOKENS = 6_000;
 
 /**
  * Truncate a response to fit within a token budget.

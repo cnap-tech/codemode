@@ -327,12 +327,14 @@ describe("CodeMode with IsolatedVMExecutor", () => {
     codemode.dispose();
   });
 
-  it("search returns spec metadata", async () => {
+  it("search returns spec paths", async () => {
     const codemode = new CodeMode({
       spec: {
         openapi: "3.0.0",
         info: { title: "Test API", version: "2.0.0", description: "My test API" },
-        paths: {},
+        paths: {
+          "/test": { get: { summary: "Test endpoint" } },
+        },
       },
       request: () => new Response("not used"),
       executor: new IsolatedVMExecutor(),
@@ -340,13 +342,12 @@ describe("CodeMode with IsolatedVMExecutor", () => {
 
     const result = await codemode.search(`
       async () => ({
-        title: spec.info.title,
-        version: spec.info.version,
         pathCount: Object.keys(spec.paths).length,
+        paths: Object.keys(spec.paths),
       })
     `);
 
     const data = JSON.parse(result.content[0]!.text);
-    expect(data).toEqual({ title: "Test API", version: "2.0.0", pathCount: 0 });
+    expect(data).toEqual({ pathCount: 1, paths: ["/test"] });
   });
 });

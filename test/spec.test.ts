@@ -211,17 +211,19 @@ describe("processSpec", () => {
     expect(paths["/pet"]).toBeUndefined();
   });
 
-  it("preserves info, omits servers", () => {
+  it("omits info, servers, and components", () => {
     const spec = {
       openapi: "3.0.0",
       info: { title: "My API", version: "2.0.0" },
       servers: [{ url: "/api/v3" }],
       paths: {},
+      components: { schemas: { Foo: { type: "object" } } },
     };
 
     const result = processSpec(spec);
-    expect((result as any).info.title).toBe("My API");
+    expect((result as any).info).toBeUndefined();
     expect((result as any).servers).toBeUndefined();
+    expect((result as any).components).toBeUndefined();
   });
 
   it("skips non-HTTP method keys", () => {
