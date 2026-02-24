@@ -47,24 +47,11 @@ export function createSearchToolDefinition(
   parts.push(`Types:
 ${SPEC_TYPES}`);
 
+  const hasTags = context?.tags && context.tags.length > 0;
   const exampleTag = context?.tags?.[0]?.toLowerCase() ?? "items";
 
-  parts.push(`Your code must be an async arrow function that returns the result.
-
-Examples:
-
-// List all endpoints
-async () => {
-  const results = [];
-  for (const [path, methods] of Object.entries(spec.paths)) {
-    for (const [method, op] of Object.entries(methods)) {
-      results.push({ method: method.toUpperCase(), path, summary: op.summary });
-    }
-  }
-  return results;
-}
-
-// Find endpoints by tag
+  const discoverExample = hasTags
+    ? `// Find endpoints by tag
 async () => {
   const results = [];
   for (const [path, methods] of Object.entries(spec.paths)) {
@@ -75,12 +62,34 @@ async () => {
     }
   }
   return results;
+}`
+    : `// List all endpoints
+async () => {
+  const results = [];
+  for (const [path, methods] of Object.entries(spec.paths)) {
+    for (const [method, op] of Object.entries(methods)) {
+      results.push({ method: method.toUpperCase(), path, summary: op.summary });
+    }
+  }
+  return results;
+}`;
+
+  parts.push(`Your code must be an async arrow function that returns the result.
+
+Examples:
+
+${discoverExample}
+
+// Get endpoint with requestBody schema (refs are resolved)
+async () => {
+  const op = spec.paths['/example']?.post;
+  return { summary: op?.summary, requestBody: op?.requestBody };
 }
 
-// Get full details for a specific endpoint (refs are already resolved)
+// Get endpoint parameters
 async () => {
   const op = spec.paths['/example']?.get;
-  return { summary: op?.summary, parameters: op?.parameters, requestBody: op?.requestBody };
+  return op?.parameters;
 }`);
 
   return {
