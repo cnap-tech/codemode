@@ -170,18 +170,24 @@ function filterHeaders(
  * Creates the `request()` function that gets injected into the execute sandbox.
  * Bridges sandbox API calls to the host request handler (Hono app.request, fetch, etc.).
  */
+/** Bridge function with an exposed request count. */
+export type RequestBridgeFn = ((options: SandboxRequestOptions) => Promise<SandboxResponse>) & {
+  /** Number of requests made through this bridge instance. */
+  readonly requestCount: number;
+};
+
 export function createRequestBridge(
   handler: RequestHandler,
   baseUrl: string,
   options: RequestBridgeOptions = {},
-): (options: SandboxRequestOptions) => Promise<SandboxResponse> {
+): RequestBridgeFn {
   const maxRequests = options.maxRequests ?? DEFAULT_MAX_REQUESTS;
   const maxResponseBytes = options.maxResponseBytes ?? DEFAULT_MAX_RESPONSE_BYTES;
   const allowedHeaders = options.allowedHeaders;
 
   let requestCount = 0;
 
-  return async (opts: SandboxRequestOptions): Promise<SandboxResponse> => {
+  const bridge = async (opts: SandboxRequestOptions): Promise<SandboxResponse> => {
     const { method, path, query, body, headers } = opts;
 
     // Validate request count
@@ -256,4 +262,11 @@ export function createRequestBridge(
       body: responseBody,
     };
   };
+
+  Object.defineProperty(bridge, 'requestCount', {
+    get: () => requestCount,
+    enumerable: true,
+  });
+
+  return bridge as RequestBridgeFn;
 }

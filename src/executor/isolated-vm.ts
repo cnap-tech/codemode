@@ -1,4 +1,4 @@
-import type { Executor, ExecuteResult, SandboxOptions } from "../types.js";
+import type { Executor, ExecuteResult, ExecuteStats, SandboxOptions } from "../types.js";
 
 /**
  * Executor implementation using isolated-vm (V8 isolates).
@@ -123,11 +123,14 @@ export class IsolatedVMExecutor implements Executor {
         }),
       ]);
 
-      return { result };
+      const stats = captureStats(isolate);
+      return { result, stats };
     } catch (err) {
+      const stats = captureStats(isolate);
       return {
         result: undefined,
         error: err instanceof Error ? err.message : String(err),
+        stats,
       };
     } finally {
       context?.release();
@@ -136,6 +139,42 @@ export class IsolatedVMExecutor implements Executor {
       }
     }
   }
+}
+
+/**
+ * Capture execution stats from an isolate before it is disposed.
+ * Safe to call even if the isolate is already disposed (returns zeroed stats).
+ */
+function captureStats(isolate: { isDisposed: boolean; cpuTime: bigint; wallTime: bigint; getHeapStatisticsSync(): Record<string, number> }): ExecuteStats {
+  if (isolate.isDisposed) {
+    return {
+      cpuTimeMs: 0,
+      wallTimeMs: 0,
+      heapUsedBytes: 0,
+      heapTotalBytes: 0,
+      externalBytes: 0,
+      heapSizeLimitBytes: 0,
+      totalPhysicalBytes: 0,
+      availableBytes: 0,
+      executableBytes: 0,
+      mallocedBytes: 0,
+      peakMallocedBytes: 0,
+    };
+  }
+  const heap = isolate.getHeapStatisticsSync();
+  return {
+    cpuTimeMs: Number(isolate.cpuTime) / 1e6,
+    wallTimeMs: Number(isolate.wallTime) / 1e6,
+    heapUsedBytes: heap.used_heap_size ?? 0,
+    heapTotalBytes: heap.total_heap_size ?? 0,
+    externalBytes: heap.externally_allocated_size ?? 0,
+    heapSizeLimitBytes: heap.heap_size_limit ?? 0,
+    totalPhysicalBytes: heap.total_physical_size ?? 0,
+    availableBytes: heap.total_available_size ?? 0,
+    executableBytes: heap.total_heap_size_executable ?? 0,
+    mallocedBytes: heap.malloced_memory ?? 0,
+    peakMallocedBytes: heap.peak_malloced_memory ?? 0,
+  };
 }
 
 function isNamespaceWithMethods(value: unknown): boolean {

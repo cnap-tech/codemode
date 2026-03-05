@@ -1,9 +1,39 @@
 /**
+ * Execution statistics captured from the V8 isolate.
+ */
+export interface ExecuteStats {
+  /** CPU time consumed by the isolate in milliseconds */
+  cpuTimeMs: number;
+  /** Wall-clock time of the execution in milliseconds */
+  wallTimeMs: number;
+  /** V8 heap used by the isolate in bytes (at end of execution) */
+  heapUsedBytes: number;
+  /** V8 heap total allocated by the isolate in bytes */
+  heapTotalBytes: number;
+  /** Memory allocated outside V8 heap (ArrayBuffers etc.) that counts against memoryLimit */
+  externalBytes: number;
+  /** The configured memory limit in bytes — useful for "% of limit used" dashboards */
+  heapSizeLimitBytes: number;
+  /** OS-level committed memory in bytes */
+  totalPhysicalBytes: number;
+  /** Remaining bytes before OOM */
+  availableBytes: number;
+  /** Size of JIT-compiled code in bytes */
+  executableBytes: number;
+  /** V8 internal malloc'd memory in bytes */
+  mallocedBytes: number;
+  /** Peak V8 internal malloc'd memory in bytes */
+  peakMallocedBytes: number;
+}
+
+/**
  * Result from executing sandboxed code.
  */
 export interface ExecuteResult {
   result: unknown;
   error?: string;
+  /** Execution statistics from the isolate. Always present, even on error. */
+  stats: ExecuteStats;
 }
 
 /**
