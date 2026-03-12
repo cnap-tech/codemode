@@ -28,3 +28,19 @@ export { resolveRefs, processSpec, extractTags, extractServerBasePath } from "./
 
 // Response truncation
 export { truncateResponse } from "./truncate.js";
+
+// Errors
+export { CodemodeError, ApprovalRequiredError } from "./errors.js";
+
+// Approvals
+export { ApprovalStore } from "./approvals.js";
+export type { ApprovalStatus, PendingApproval } from "./approvals.js";
+
+// Policy
+export { PolicyEngine } from "./policy/engine.js";
+export type { Policy, PolicyAction, PolicyRule } from "./policy/types.js";
+export type { PolicyEngineOptions } from "./policy/engine.js";
+
+// Platform API
+export { createPlatformApi } from "./platform/api.js";
+export type { PlatformApiOptions } from "./platform/api.js";
