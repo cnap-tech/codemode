@@ -1,69 +1,18 @@
 {
-  "name": "@robinbraemer/codemode",
-  "version": "0.1.6",
-  "description": "Code Mode MCP tools from OpenAPI specs. Two tools (search + execute) replace hundreds of individual MCP tools.",
-  "type": "module",
-  "main": "./dist/index.js",
-  "types": "./dist/index.d.ts",
-  "exports": {
-    ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
-    },
-    "./mcp": {
-      "types": "./dist/mcp.d.ts",
-      "import": "./dist/mcp.js"
-    }
-  },
-  "files": [
-    "dist",
-    "README.md",
-    "LICENSE"
-  ],
+  "name": "codemode-monorepo",
+  "private": true,
   "scripts": {
-    "build": "tsup",
-    "dev": "tsup --watch",
-    "test": "vitest run",
-    "test:watch": "vitest",
-    "lint": "oxlint && tsc --noEmit",
-    "prepublishOnly": "pnpm run build"
-  },
-  "keywords": [
-    "mcp",
-    "openapi",
-    "codemode",
-    "code-mode",
-    "sandbox",
-    "ai",
-    "llm",
-    "tools",
-    "model-context-protocol"
-  ],
-  "author": "cnap-tech",
-  "license": "MIT",
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/cnap-tech/codemode.git"
-  },
-  "peerDependencies": {
-    "isolated-vm": "6"
-  },
-  "peerDependenciesMeta": {
-    "isolated-vm": {
-      "optional": true
-    }
+    "build": "pnpm -r run build",
+    "build:codemode": "pnpm --filter @robinbraemer/codemode build",
+    "dev": "pnpm --filter @robinbraemer/codemode dev",
+    "test": "pnpm --filter @robinbraemer/codemode test",
+    "test:watch": "pnpm --filter @robinbraemer/codemode test:watch",
+    "lint": "oxlint && pnpm -r run typecheck",
+    "ci": "pnpm run lint && pnpm run test && pnpm run build"
   },
   "devDependencies": {
-    "@modelcontextprotocol/sdk": "^1.12.1",
-    "hono": "^4.7.6",
-    "isolated-vm": "^6.0.2",
     "oxlint": "^1.50.0",
-
-    "tsup": "^8.4.0",
-    "tsx": "^4.21.0",
-    "typescript": "^5.7.3",
-    "vitest": "^3.0.5",
-    "zod": "^4.0.0"
+    "typescript": "^5.7.3"
   },
   "pnpm": {
     "onlyBuiltDependencies": [

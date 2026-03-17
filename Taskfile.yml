@@ -14,42 +14,42 @@ tasks:
       - pnpm install
 
   build:
-    desc: Build the package
+    desc: Build all packages
     cmds:
-      - pnpm tsup
+      - pnpm -r run build
 
   dev:
-    desc: Build in watch mode
+    desc: Build codemode in watch mode
     cmds:
-      - pnpm tsup --watch
+      - pnpm --filter @robinbraemer/codemode dev
 
   test:
     desc: Run tests
     cmds:
-      - pnpm vitest run {{.CLI_ARGS}}
+      - pnpm --filter @robinbraemer/codemode test {{.CLI_ARGS}}
 
   test:watch:
     desc: Run tests in watch mode
     cmds:
-      - pnpm vitest {{.CLI_ARGS}}
+      - pnpm --filter @robinbraemer/codemode test:watch {{.CLI_ARGS}}
 
   lint:
     desc: Lint and type-check
     cmds:
       - pnpm oxlint
-      - pnpm tsc --noEmit
+      - pnpm -r run typecheck
 
   example:
     desc: Run the Petstore demo
     deps: [build]
     cmds:
-      - pnpm tsx examples/petstore.ts
+      - pnpm --filter @robinbraemer/codemode exec tsx examples/petstore.ts
 
   example:mcp:
     desc: Run the Petstore MCP server
     deps: [build]
     cmds:
-      - pnpm tsx examples/petstore-mcp-server.ts
+      - pnpm --filter @robinbraemer/codemode exec tsx examples/petstore-mcp-server.ts
 
   ci:
     desc: Run full CI pipeline (lint + test + build)

@@ -2,7 +2,7 @@
   "mcpServers": {
     "petstore": {
       "command": "pnpm",
-      "args": ["tsx", "examples/petstore-mcp-server.ts"]
+      "args": ["--filter", "@robinbraemer/codemode", "exec", "tsx", "examples/petstore-mcp-server.ts"]
     }
   }
 }
