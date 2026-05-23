@@ -3,11 +3,17 @@ import type { Executor, ExecuteResult, ExecuteStats, SandboxOptions } from "../t
 /**
  * Executor implementation using quickjs-emscripten (pure WASM QuickJS).
  *
+ * **Not a production backend.** This executor exists so `@robinbraemer/codemode`
+ * loads without crashing under runtimes where `isolated-vm` cannot dlopen
+ * — most importantly **Bun** (its JavaScriptCore engine does not export V8
+ * symbols like `v8::ValueSerializer::Delegate::IsHostObject` that isolated-vm
+ * needs), and any future Cloudflare Workers / browser deployment. Production
+ * callers on Node should use `IsolatedVMExecutor` for performance, maturity,
+ * and the upstream-bug-free async story (see below). Backend selection is
+ * automatic via `createExecutor` in `./auto.ts`.
+ *
  * No native compilation is required: this runs on Node, Bun, Cloudflare
- * Workers, Deno, and the browser. Use this backend when isolated-vm is not
- * available — most importantly on Bun, where isolated-vm cannot dlopen
- * because it relies on V8 symbols that the JavaScriptCore-based Bun runtime
- * does not export (e.g. `v8::ValueSerializer::Delegate::IsHostObject`).
+ * Workers, Deno, and the browser.
  *
  * Each execute() call creates a fresh QuickJS runtime + context — no state
  * leaks between calls. The sandbox has zero I/O capabilities by default (no
@@ -20,12 +26,24 @@ import type { Executor, ExecuteResult, ExecuteStats, SandboxOptions } from "../t
  * `captureStats` for the exact mapping. The shape (key names + types) is
  * preserved so callers can treat both executors interchangeably.
  *
- * Known platform quirks
- * ---------------------
- * Node 24 + release-asyncify WASM: stable for the patterns codemode uses
- * (sequential `await hostFn()`, namespaced objects, mixed primitive and
- * object returns). The implementation works around two release-asyncify
- * bugs:
+ * Upstream bugs in `quickjs-emscripten@0.32.0` release-asyncify
+ * -------------------------------------------------------------
+ * The following two issues are **not Bun-specific** — empirically reproduced
+ * on Node 24.13.1 and Bun 1.3.9 with the same QuickJS C-side assertion
+ * (`p->ref_count == 0` at `quickjs.c:6009, free_zero_refcount`). Treat as
+ * upstream-blocking until justjake/quickjs-emscripten patches land:
+ *
+ *   - **#258** — multiple sequential `await hostFn()` calls in user code crash
+ *     with "Aborted(Assertion failed: p->ref_count == 0)" + WASM "memory
+ *     access out of bounds" trap. Single `await` works. Use `Promise.all` for
+ *     parallel calls instead of chained sequential `await`s.
+ *   - **#261** — `QuickJSAsyncWASMModule.newRuntime` disposes in the wrong
+ *     order, producing `Aborted(Assertion failed: ...)` noise on dispose
+ *     after asyncified host functions have been defined. Caught in our
+ *     `finally`; result correctness unaffected.
+ *
+ * This implementation also works around two related construction-ordering
+ * bugs in the same release-asyncify build:
  *
  *   1. Calling `evalCode` / `evalCodeAsync` *before* `newAsyncifiedFunction`
  *      registration corrupts asyncify bookkeeping and crashes the second
@@ -39,14 +57,9 @@ import type { Executor, ExecuteResult, ExecuteStats, SandboxOptions } from "../t
  *      `JSON.stringify` envelope so the value we read back is a primitive
  *      string. See `execute()` for the wrapping detail.
  *
- * Bun: backend auto-selection (`createExecutor`) picks this executor on Bun
- * because isolated-vm can't load there. Single `await hostFn()` calls work,
- * but multiple sequential `await`s currently fail with WASM
- * "Out of bounds memory access" — this is a known interaction between Bun's
- * JavaScriptCore-backed WASM runtime and quickjs-emscripten's asyncify
- * build, not a logic bug in this executor. For now, treat Bun support as
- * "single-await only"; multi-await sandboxed code should run on Node (with
- * isolated-vm) until upstream fixes land.
+ * **Guest-code constraint for callers**: sandboxed user code must not chain
+ * sequential `await`s on host functions. Use `Promise.all([fn1(), fn2()])`
+ * or call once-per-execution. This applies on every runtime, not just Bun.
  */
 export class QuickJSExecutor implements Executor {
   private memoryMB: number;

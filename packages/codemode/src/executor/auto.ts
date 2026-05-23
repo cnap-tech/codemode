@@ -17,8 +17,14 @@ function isBun(): boolean {
  *   - **Bun** → QuickJS first (isolated-vm cannot load native bindings under
  *     JavaScriptCore), fall back to isolated-vm only if QuickJS isn't
  *     installed.
- *   - **Node** → isolated-vm first (V8 JIT is faster), fall back to QuickJS
- *     if isolated-vm isn't installed (e.g. ARM Linux without build tools).
+ *   - **Node** → isolated-vm first (V8 JIT is faster, mature, no upstream
+ *     async bugs), fall back to QuickJS if isolated-vm isn't installed (e.g.
+ *     ARM Linux without build tools, or a Node minor without a prebuild).
+ *
+ * Production deployments on Node should always have `isolated-vm` installed
+ * — QuickJS is a compatibility fallback, not a recommended production
+ * backend. See `QuickJSExecutor`'s docstring for the upstream
+ * `quickjs-emscripten` bugs it inherits.
  *
  * Both `isolated-vm` and `quickjs-emscripten` are optional peer dependencies.
  */
