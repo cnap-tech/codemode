@@ -1,0 +1,64 @@
+{
+  "name": "@robinbraemer/llrt",
+  "version": "0.0.0",
+  "description": "TypeScript-friendly Node bindings for AWS LLRT.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsup",
+    "build:native": "pnpm run prepare:llrt-source && napi build --manifest-path native/Cargo.toml --platform --release",
+    "build:native:target": "node scripts/build-native-target.mjs",
+    "collect:native-artifacts": "napi artifacts --npm-dir npm --output-dir native",
+    "create:native-packages": "napi create-npm-dirs --npm-dir npm",
+    "dev:native": "pnpm run prepare:llrt-source && napi build --manifest-path native/Cargo.toml --platform",
+    "prepare:llrt-source": "node scripts/prepare-llrt-source.mjs",
+    "prepare:native-publish": "napi pre-publish --npm-dir npm --tag-style npm --skip-optional-publish",
+    "prepublish:native-packages:dry-run": "napi pre-publish --npm-dir npm --tag-style npm --dry-run",
+    "smoke:packed-install": "node scripts/smoke-packed-install.mjs",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "verify:native-artifacts": "node scripts/verify-native-artifacts.mjs",
+    "verify:native-artifacts:strict": "node scripts/verify-native-artifacts.mjs --require-binaries",
+    "prepublishOnly": "pnpm run build"
+  },
+  "keywords": [
+    "llrt",
+    "quickjs",
+    "runtime",
+    "napi",
+    "typescript"
+  ],
+  "author": "Robin Braemer",
+  "license": "MIT",
+  "napi": {
+    "binaryName": "llrt_node",
+    "targets": [
+      "aarch64-apple-darwin",
+      "x86_64-apple-darwin",
+      "x86_64-unknown-linux-gnu",
+      "aarch64-unknown-linux-gnu"
+    ]
+  },
+  "devDependencies": {
+    "@napi-rs/cli": "^3.0.0",
+    "@types/node": "^24.13.1",
+    "tsup": "^8.4.0",
+    "typescript": "^6.0.0",
+    "vitest": "^4.0.0"
+  }
+}

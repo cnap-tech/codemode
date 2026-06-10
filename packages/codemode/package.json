@@ -21,6 +21,7 @@
     "LICENSE"
   ],
   "scripts": {
+    "benchmark:executors": "tsx scripts/benchmark-executors.ts",
     "build": "tsup",
     "dev": "tsup --watch",
     "test": "vitest run",
@@ -46,10 +47,14 @@
     "url": "https://github.com/cnap-tech/codemode.git"
   },
   "peerDependencies": {
+    "@robinbraemer/llrt": "0.0.0",
     "isolated-vm": "6",
     "quickjs-emscripten": ">=0.31"
   },
   "peerDependenciesMeta": {
+    "@robinbraemer/llrt": {
+      "optional": true
+    },
     "isolated-vm": {
       "optional": true
     },
@@ -58,7 +63,9 @@
     }
   },
   "devDependencies": {
+    "@robinbraemer/llrt": "workspace:*",
     "@modelcontextprotocol/sdk": "^1.12.1",
+    "@types/node": "^24.13.1",
     "hono": "^4.7.6",
     "isolated-vm": "^6.0.2",
     "quickjs-emscripten": "^0.32.0",

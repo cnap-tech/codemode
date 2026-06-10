@@ -1,0 +1,75 @@
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { describe, expect, it } from "vitest";
+import packageJson from "../package.json" with { type: "json" };
+
+const root = join(dirname(fileURLToPath(import.meta.url)), "../../..");
+const workflowPath = join(root, ".github/workflows/llrt-native.yml");
+
+describe("LLRT native prebuild workflow", () => {
+  it("builds every napi target declared by the package manifest", () => {
+    const workflow = readFileSync(workflowPath, "utf8");
+
+    for (const target of packageJson.napi.targets) {
+      expect(workflow).toContain(`target: ${target}`);
+    }
+  });
+
+  it("uses explicit runner labels for each supported native target", () => {
+    const workflow = readFileSync(workflowPath, "utf8");
+
+    expect(workflow).toContain("runner: macos-15");
+    expect(workflow).toContain("runner: macos-15-intel");
+    expect(workflow).toContain("runner: ubuntu-24.04");
+    expect(workflow).toContain("runner: ubuntu-24.04-arm");
+  });
+
+  it("packages artifacts before publishing the LLRT package family", () => {
+    const workflow = readFileSync(workflowPath, "utf8");
+
+    expect(workflow).toContain("pnpm --filter @robinbraemer/llrt run create:native-packages");
+    expect(workflow).toContain("pnpm --filter @robinbraemer/llrt run prepare:native-publish");
+    expect(workflow).toContain("npm publish --access public --no-git-checks");
+    expect(workflow).toContain("pnpm --filter @robinbraemer/llrt publish --access public --no-git-checks");
+  });
+
+  it("passes the native build target through an explicit environment variable", () => {
+    const workflow = readFileSync(workflowPath, "utf8");
+
+    expect(packageJson.scripts["build:native:target"]).toBe("node scripts/build-native-target.mjs");
+    expect(workflow).toContain("LLRT_TARGET: ${{ matrix.target }}");
+    expect(workflow).toContain("pnpm --filter @robinbraemer/llrt run build:native:target");
+    expect(workflow).not.toContain("run build:native:target -- --target");
+  });
+
+  it("smoke-tests a consumer install from packed main and native tarballs", () => {
+    const workflow = readFileSync(workflowPath, "utf8");
+    const smokeCommand = "pnpm --filter @robinbraemer/llrt run smoke:packed-install";
+
+    expect(packageJson.scripts["smoke:packed-install"]).toBe(
+      "node scripts/smoke-packed-install.mjs",
+    );
+    expect(workflow).toContain(smokeCommand);
+    expect([...workflow.matchAll(new RegExp(smokeCommand, "g"))]).toHaveLength(2);
+  });
+
+  it("verifies native package manifests locally and downloaded native artifacts in CI", () => {
+    const workflow = readFileSync(workflowPath, "utf8");
+
+    expect(packageJson.scripts["verify:native-artifacts"]).toBe(
+      "node scripts/verify-native-artifacts.mjs",
+    );
+    expect(packageJson.scripts["verify:native-artifacts:strict"]).toBe(
+      "node scripts/verify-native-artifacts.mjs --require-binaries",
+    );
+    expect(workflow).toContain("pnpm --filter @robinbraemer/llrt run verify:native-artifacts");
+    expect(workflow).toContain(
+      "pnpm --filter @robinbraemer/llrt run verify:native-artifacts:strict",
+    );
+  });
+
+  it("does not rebuild native binaries in the main package prepublish hook", () => {
+    expect(packageJson.scripts.prepublishOnly).not.toContain("build:native");
+  });
+});

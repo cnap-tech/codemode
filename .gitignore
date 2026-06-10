@@ -1,4 +1,9 @@
 node_modules/
 dist/
+target/
+*.node
 *.tgz
 .DS_Store
+packages/llrt/native/index.d.ts
+packages/llrt/native/index.js
+packages/llrt/vendor/

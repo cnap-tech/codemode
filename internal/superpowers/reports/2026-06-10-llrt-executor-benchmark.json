@@ -1,0 +1,74 @@
+[
+  {
+    "engine": "llrt-native",
+    "scenario": "cold-simple",
+    "iterations": 25,
+    "totalMs": 22.67,
+    "meanMs": 0.91,
+    "errors": 0
+  },
+  {
+    "engine": "llrt-native",
+    "scenario": "openapi-json-scan",
+    "iterations": 25,
+    "totalMs": 22.93,
+    "meanMs": 0.92,
+    "errors": 0
+  },
+  {
+    "engine": "llrt-native",
+    "scenario": "host-callbacks-parallel",
+    "iterations": 25,
+    "totalMs": 17.74,
+    "meanMs": 0.71,
+    "errors": 0
+  },
+  {
+    "engine": "isolated-vm",
+    "scenario": "cold-simple",
+    "iterations": 25,
+    "totalMs": 22.58,
+    "meanMs": 0.9,
+    "errors": 0
+  },
+  {
+    "engine": "isolated-vm",
+    "scenario": "openapi-json-scan",
+    "iterations": 25,
+    "totalMs": 29.72,
+    "meanMs": 1.19,
+    "errors": 0
+  },
+  {
+    "engine": "isolated-vm",
+    "scenario": "host-callbacks-parallel",
+    "iterations": 25,
+    "totalMs": 20.4,
+    "meanMs": 0.82,
+    "errors": 0
+  },
+  {
+    "engine": "quickjs-wasm",
+    "scenario": "cold-simple",
+    "iterations": 25,
+    "totalMs": 128.84,
+    "meanMs": 5.15,
+    "errors": 0
+  },
+  {
+    "engine": "quickjs-wasm",
+    "scenario": "openapi-json-scan",
+    "iterations": 25,
+    "totalMs": 126.12,
+    "meanMs": 5.04,
+    "errors": 0
+  },
+  {
+    "engine": "quickjs-wasm",
+    "scenario": "host-callbacks-parallel",
+    "iterations": 25,
+    "totalMs": 98.13,
+    "meanMs": 3.93,
+    "errors": 0
+  }
+]

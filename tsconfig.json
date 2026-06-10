@@ -1,6 +1,7 @@
 {
   "files": [],
   "references": [
-    { "path": "packages/codemode" }
+    { "path": "packages/codemode" },
+    { "path": "packages/llrt" }
   ]
 }

@@ -17,6 +17,9 @@ export type {
 
 // Executors (for advanced usage / custom executor selection)
 export { IsolatedVMExecutor } from "./executor/isolated-vm.js";
+export { LlrtNativeExecutor } from "./executor/llrt-native.js";
+export { LlrtProcessExecutor } from "./executor/llrt-process.js";
+export type { LlrtProcessExecutorOptions } from "./executor/llrt-process.js";
 export { QuickJSExecutor } from "./executor/quickjs.js";
 export { createExecutor } from "./executor/auto.js";
 

@@ -26,7 +26,7 @@ tasks:
   test:
     desc: Run tests
     cmds:
-      - pnpm --filter @robinbraemer/codemode test {{.CLI_ARGS}}
+      - pnpm test {{.CLI_ARGS}}
 
   test:watch:
     desc: Run tests in watch mode

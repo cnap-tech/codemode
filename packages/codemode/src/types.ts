@@ -39,8 +39,10 @@ export interface ExecuteResult {
 /**
  * Sandbox executor interface. Implement this to use a custom sandbox runtime.
  *
- * Built-in implementation:
+ * Built-in implementations:
+ * - `LlrtNativeExecutor` (requires `@robinbraemer/llrt` peer dependency)
  * - `IsolatedVMExecutor` (requires `isolated-vm` peer dependency)
+ * - `QuickJSExecutor` (requires `quickjs-emscripten` peer dependency)
  */
 export interface Executor {
   /**
@@ -139,7 +141,8 @@ export interface CodeModeOptions {
   sandbox?: SandboxOptions;
 
   /**
-   * Custom executor instance. If not provided, uses isolated-vm.
+   * Custom executor instance. If not provided, `createExecutor()` chooses
+   * the best installed runtime.
    */
   executor?: Executor;
 
