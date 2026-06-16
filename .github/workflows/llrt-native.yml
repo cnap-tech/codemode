@@ -1,0 +1,149 @@
+name: LLRT Native Packages
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/workflows/llrt-native.yml"
+      - "packages/llrt/**"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - "Taskfile.yml"
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/llrt-native.yml"
+      - "packages/llrt/**"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - "Taskfile.yml"
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  build-native:
+    name: Build ${{ matrix.platform_arch_abi }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: aarch64-apple-darwin
+            platform_arch_abi: darwin-arm64
+            runner: macos-15
+          - target: x86_64-apple-darwin
+            platform_arch_abi: darwin-x64
+            runner: macos-15-intel
+          - target: x86_64-unknown-linux-gnu
+            platform_arch_abi: linux-x64-gnu
+            runner: ubuntu-24.04
+          - target: aarch64-unknown-linux-gnu
+            platform_arch_abi: linux-arm64-gnu
+            runner: ubuntu-24.04-arm
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: jdx/mise-action@v4
+
+      - run: pnpm install --filter @robinbraemer/llrt...
+
+      - run: rustup target add ${{ matrix.target }}
+
+      - run: pnpm --filter @robinbraemer/llrt run create:native-packages
+
+      - run: pnpm --filter @robinbraemer/llrt run verify:native-artifacts
+
+      - run: pnpm --filter @robinbraemer/llrt run prepare:llrt-source
+
+      - run: pnpm --filter @robinbraemer/llrt run build:native:target
+        env:
+          LLRT_TARGET: ${{ matrix.target }}
+
+      - run: pnpm --filter @robinbraemer/llrt run test:native
+
+      - run: pnpm --filter @robinbraemer/llrt run collect:native-artifacts
+
+      - name: Verify optional native package
+        working-directory: packages/llrt/npm/${{ matrix.platform_arch_abi }}
+        run: npm pack --dry-run
+
+      - run: pnpm --filter @robinbraemer/llrt run build
+
+      - name: Smoke-test packed install on native runner
+        run: pnpm --filter @robinbraemer/llrt run smoke:packed-install
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: llrt-native-${{ matrix.platform_arch_abi }}
+          path: packages/llrt/npm/${{ matrix.platform_arch_abi }}/llrt_node.${{ matrix.platform_arch_abi }}.node
+          if-no-files-found: error
+
+  package:
+    name: Package LLRT
+    runs-on: ubuntu-24.04
+    needs: build-native
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: jdx/mise-action@v4
+
+      - run: pnpm install --filter @robinbraemer/llrt...
+
+      - run: pnpm --filter @robinbraemer/llrt run create:native-packages
+
+      - run: pnpm --filter @robinbraemer/llrt run verify:native-artifacts
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: llrt-native-*
+          path: artifacts/llrt-native
+
+      - name: Place native artifacts into npm package directories
+        run: |
+          for artifact_dir in artifacts/llrt-native/llrt-native-*; do
+            platform_arch_abi="${artifact_dir##*/llrt-native-}"
+            mkdir -p "packages/llrt/npm/${platform_arch_abi}"
+            cp "${artifact_dir}/llrt_node.${platform_arch_abi}.node" "packages/llrt/npm/${platform_arch_abi}/"
+          done
+
+      - run: pnpm --filter @robinbraemer/llrt run verify:native-artifacts:strict
+
+      - run: pnpm --filter @robinbraemer/llrt run build
+
+      - name: Verify main package
+        working-directory: packages/llrt
+        run: npm pack --dry-run
+
+      - name: Verify optional native packages
+        run: |
+          for package_dir in packages/llrt/npm/*; do
+            (cd "${package_dir}" && npm pack --dry-run)
+          done
+
+      - run: pnpm --filter @robinbraemer/llrt run smoke:packed-install
+
+      - name: Prepare native package metadata
+        if: github.event_name == 'release'
+        env:
+          GITHUB_REPOSITORY: ""
+        run: pnpm --filter @robinbraemer/llrt run prepare:native-publish
+
+      - name: Publish optional native packages
+        if: github.event_name == 'release'
+        run: |
+          for package_dir in packages/llrt/npm/*; do
+            (cd "${package_dir}" && npm publish --access public)
+          done
+
+      - name: Publish main LLRT package
+        if: github.event_name == 'release'
+        run: npm publish --access public
+        working-directory: packages/llrt

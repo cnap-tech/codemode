@@ -22,28 +22,44 @@ function isBun(): boolean {
  * Pick a sandbox runtime automatically.
  *
  * Order of preference:
+ *   - **LLRT native** → first when `@robinbraemer/llrt` is installed. This is
+ *     the lightweight default candidate and satisfies the shared executor
+ *     contract, including host callbacks.
  *   - **Bun** → QuickJS first (isolated-vm cannot load native bindings under
  *     JavaScriptCore), fall back to isolated-vm only if QuickJS isn't
  *     installed.
- *   - **Node** → isolated-vm first (V8 JIT is faster, mature, no upstream
- *     async bugs), fall back to QuickJS if isolated-vm isn't installed (e.g.
- *     ARM Linux without build tools, or a Node minor without a prebuild).
+ *   - **Node without LLRT** → isolated-vm first (mature V8 isolates), then
+ *     QuickJS if isolated-vm isn't installed (e.g. ARM Linux without build
+ *     tools, or a Node minor without a prebuild).
  *
- * Production deployments on Node should always have `isolated-vm` installed
- * — QuickJS is a compatibility fallback, not a recommended production
- * backend. See `QuickJSExecutor`'s docstring for the upstream
- * `quickjs-emscripten` bugs it inherits.
+ * QuickJS is a compatibility fallback, not a recommended production backend.
+ * See `QuickJSExecutor`'s docstring for the upstream `quickjs-emscripten`
+ * bugs it inherits.
  *
- * Both `isolated-vm` and `quickjs-emscripten` are optional peer dependencies.
+ * All sandbox runtimes are optional peer dependencies.
  */
 export async function createExecutor(
   options: SandboxOptions = {},
 ): Promise<Executor> {
-  const order = isBun() ? (["quickjs", "isolated-vm"] as const) : (["isolated-vm", "quickjs"] as const);
+  const order = isBun()
+    ? (["llrt", "quickjs", "isolated-vm"] as const)
+    : (["llrt", "isolated-vm", "quickjs"] as const);
 
   /* oxlint-disable no-await-in-loop */
   for (const backend of order) {
-    if (backend === "isolated-vm") {
+    if (backend === "llrt") {
+      try {
+        await import("@robinbraemer/llrt");
+      } catch (error) {
+        if (isMissingOptionalDependency(error, "@robinbraemer/llrt")) {
+          continue;
+        }
+        throw error;
+      }
+
+      const { LlrtNativeExecutor } = await import("./llrt-native.js");
+      return new LlrtNativeExecutor(options);
+    } else if (backend === "isolated-vm") {
       try {
         // @ts-ignore — optional peer dependency
         await import("isolated-vm");
@@ -67,7 +83,29 @@ export async function createExecutor(
 
   throw new Error(
     "No sandbox runtime found. Install one of:\n" +
-      "  npm install isolated-vm          # V8 isolates (Node.js, fastest)\n" +
+      "  npm install @robinbraemer/llrt   # Native LLRT (default candidate)\n" +
+      "  npm install isolated-vm          # V8 isolates (Node.js fallback)\n" +
       "  npm install quickjs-emscripten   # WASM QuickJS (Bun, Workers, browser)",
   );
+}
+
+export function isMissingOptionalDependency(
+  error: unknown,
+  dependency: string,
+): boolean {
+  const escapedDependency = escapeRegExp(dependency);
+  const missingDependencyPattern = new RegExp(
+    `Cannot find (?:package|module) ['"]${escapedDependency}['"]`,
+  );
+
+  return (
+    error instanceof Error &&
+    "code" in error &&
+    error.code === "ERR_MODULE_NOT_FOUND" &&
+    missingDependencyPattern.test(error.message)
+  );
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }

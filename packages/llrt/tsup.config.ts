@@ -3,11 +3,9 @@ import { defineConfig } from "tsup";
 export default defineConfig({
   entry: {
     index: "src/index.ts",
-    mcp: "src/mcp.ts",
   },
   format: ["esm"],
   dts: true,
   sourcemap: true,
   clean: true,
-  external: ["@robinbraemer/llrt", "isolated-vm", "quickjs-emscripten"],
 });

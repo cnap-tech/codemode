@@ -1,6 +1,6 @@
 {
   "name": "@robinbraemer/codemode",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Code Mode MCP tools from OpenAPI specs. Two tools (search + execute) replace hundreds of individual MCP tools.",
   "type": "module",
   "main": "./dist/index.js",
@@ -21,6 +21,7 @@
     "LICENSE"
   ],
   "scripts": {
+    "benchmark:executors": "tsx scripts/benchmark-executors.ts",
     "build": "tsup",
     "dev": "tsup --watch",
     "test": "vitest run",
@@ -46,10 +47,14 @@
     "url": "https://github.com/cnap-tech/codemode.git"
   },
   "peerDependencies": {
+    "@robinbraemer/llrt": "^0.1.0",
     "isolated-vm": "6",
     "quickjs-emscripten": ">=0.31"
   },
   "peerDependenciesMeta": {
+    "@robinbraemer/llrt": {
+      "optional": true
+    },
     "isolated-vm": {
       "optional": true
     },
@@ -58,7 +63,9 @@
     }
   },
   "devDependencies": {
+    "@robinbraemer/llrt": "workspace:*",
     "@modelcontextprotocol/sdk": "^1.12.1",
+    "@types/node": "^24.13.1",
     "hono": "^4.7.6",
     "isolated-vm": "^6.0.2",
     "quickjs-emscripten": "^0.32.0",

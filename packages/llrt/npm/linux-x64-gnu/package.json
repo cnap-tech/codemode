@@ -1,0 +1,30 @@
+{
+  "name": "@robinbraemer/llrt-linux-x64-gnu",
+  "version": "0.1.0",
+  "cpu": [
+    "x64"
+  ],
+  "main": "llrt_node.linux-x64-gnu.node",
+  "files": [
+    "llrt_node.linux-x64-gnu.node"
+  ],
+  "description": "TypeScript-friendly Node bindings for AWS LLRT.",
+  "keywords": [
+    "llrt",
+    "quickjs",
+    "runtime",
+    "napi",
+    "typescript"
+  ],
+  "author": "Robin Braemer",
+  "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
+  "os": [
+    "linux"
+  ],
+  "libc": [
+    "glibc"
+  ]
+}
